@@ -1,9 +1,0 @@
-# Deprecated: use uv sync --extra model --extra video instead.
-# Kept only for pip fallback on non-Jetson machines.
-numpy>=1.24
-Pillow>=10.0
-psutil>=5.9
-transformers>=4.42
-accelerate>=0.30
-torch
-opencv-python>=4.8

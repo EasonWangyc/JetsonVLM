@@ -1,4 +1,0 @@
-# Deprecated: use uv sync instead.
-# Kept only for pip fallback.
-numpy>=1.24
-psutil>=5.9

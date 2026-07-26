@@ -2,47 +2,19 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Virtual environments
+.coverage
 .venv/
-venv/
-env/
 
-# uv
-uv.lock
-
-# Runtime artifacts
-artifacts/*
-!artifacts/.gitkeep
-reports/*
-!reports/README.md
-!reports/.gitkeep
-
-# User data and large media
-data/images/*
-!data/images/README.md
-!data/images/.gitkeep
-data/videos/*
-!data/videos/README.md
-!data/videos/.gitkeep
-
-# Model caches / weights
+# Local inputs and generated artifacts
+data/raw/
+data/processed/
+artifacts/
+reports/
 models/
-checkpoints/
-*.safetensors
 *.onnx
 *.engine
-*.pt
-*.pth
-*.bin
+*.plan
 
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# docs
-docs/reference/
+# Jetson and profiler outputs
+tegrastats*.log
+nsys-rep/
