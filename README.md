@@ -30,7 +30,7 @@ artifacts/        # 模型和 engine 生成物
 reports/          # StudyReport
 scripts/          # 显式流程入口
 tests/            # 无硬件单元测试
-docs/              # 项目文档
+docs/             # 项目文档
 ```
 
 ## 主要 Module
@@ -40,4 +40,31 @@ docs/              # 项目文档
 - `inference`：通过 `RiskRuntime.analyze(case, workload)` 生成 `InferenceRecord`。
 - `studies`：通过 `StudyRunner.run(casebook, runtime, study)` 生成 `StudyReport`。
 
-完整架构见 [docs/architecture.md](docs/architecture.md)，领域术语见 [CONTEXT.md](CONTEXT.md)。
+## 实验基线
+
+项目区分三种实验角色：
+
+- 服务器 Transformers：正确性参考、完整质量研究、误差分析和 LoRA 训练。
+- Jetson Transformers FP16：板端原生框架基线，记录可运行性、OOM、时延和内存。
+- Jetson TensorRT Edge-LLM：最终部署 runtime，与 Jetson Transformers 在同一工作负载
+  下比较 FP16 和后续 INT4 结果。
+
+服务器性能不用于证明 Jetson 加速收益；部署性能结论来自 Jetson 同机实验。
+
+## 开始使用
+
+无硬件验证：
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+项目不会在导入或测试时下载模型、启动 GPU 任务或构建 engine。模型操作通过显式命令
+进入，并保留输入、输出、日志和结果状态。
+
+完整架构见 [docs/architecture.md](docs/architecture.md)，操作入口见
+[docs/operations.md](docs/operations.md)，当前实现与待实测边界见
+[docs/status.md](docs/status.md)，评测口径见
+[docs/evaluation.md](docs/evaluation.md)，领域术语见 [CONTEXT.md](CONTEXT.md)，
+数据 JSONL 约定见 [docs/data.md](docs/data.md)，当前环境、模型缓存、执行命令和
+下一阶段见 [docs/progress.md](docs/progress.md)。

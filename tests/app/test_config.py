@@ -1,0 +1,126 @@
+"""Tests for app configuration, runtime construction, and unlabeled analysis."""
+
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+
+from parksight_vlm.app import AppConfigError, AppStudyConfig, RuntimeConfig, build_runtime
+from parksight_vlm.app.analyze_image import analyze_image
+from parksight_vlm.inference import RuntimeGeneration, TransformersRuntime
+from parksight_vlm.workload import FrozenWorkload
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WORKLOAD = FrozenWorkload.load(
+    PROJECT_ROOT / "configs" / "workloads" / "parking_risk_v1.json"
+)
+FIXTURE_IMAGE = PROJECT_ROOT / "tests" / "fixtures" / "inference" / "scene.jpg"
+
+
+class StaticBackend:
+    def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
+        return RuntimeGeneration(
+            raw_output=json.dumps(
+                {
+                    "schema_version": "parking_risk_v1",
+                    "risk_level": "low",
+                    "events": [],
+                    "evidence": ["The visible maneuver path is clear."],
+                    "driver_advice": ["maintain_observation"],
+                }
+            )
+        )
+
+
+class AppTests(unittest.TestCase):
+    def test_loads_all_repository_study_configs(self) -> None:
+        transformers_config = AppStudyConfig.load(
+            PROJECT_ROOT / "configs" / "studies" / "transformers_base.json"
+        )
+        jetson_transformers_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "jetson_transformers_fp16.json"
+        )
+        edge_config = AppStudyConfig.load(
+            PROJECT_ROOT / "configs" / "studies" / "edgellm_fp16.json"
+        )
+
+        self.assertEqual(transformers_config.runtime.backend, "transformers")
+        self.assertEqual(
+            jetson_transformers_config.runtime.backend, "transformers"
+        )
+        self.assertEqual(jetson_transformers_config.runtime.precision, "fp16")
+        self.assertEqual(
+            jetson_transformers_config.runtime.backend_revision,
+            "transformers==4.57.6",
+        )
+        self.assertEqual(
+            jetson_transformers_config.study.power_mode, "15W_MODE_0"
+        )
+        self.assertEqual(edge_config.runtime.backend, "tensorrt_edge_llm_http")
+        self.assertEqual(edge_config.study.workload.identity, WORKLOAD.identity)
+
+    def test_build_runtime_rejects_unknown_options(self) -> None:
+        config = RuntimeConfig(
+            backend="transformers",
+            backend_revision="test",
+            model_id="Qwen/Qwen3-VL-2B-Instruct",
+            model_revision="revision",
+            adapter_revision="none",
+            precision="bf16",
+            options={"unknown": True},
+        )
+        with self.assertRaisesRegex(AppConfigError, "unsupported transformers options"):
+            build_runtime(config, data_root=FIXTURE_IMAGE.parent)
+
+    def test_build_runtime_rejects_mutable_or_placeholder_revision(self) -> None:
+        for revision in ("main", "replace-with-immutable-huggingface-commit"):
+            config = RuntimeConfig(
+                backend="transformers",
+                backend_revision="test",
+                model_id="Qwen/Qwen3-VL-2B-Instruct",
+                model_revision=revision,
+                adapter_revision="none",
+                precision="bf16",
+                options={},
+            )
+            with self.subTest(revision=revision), self.assertRaises(AppConfigError):
+                build_runtime(config, data_root=FIXTURE_IMAGE.parent)
+
+        backend_config = RuntimeConfig(
+            backend="transformers",
+            backend_revision="replace-with-installed-transformers-version",
+            model_id="Qwen/Qwen3-VL-2B-Instruct",
+            model_revision="immutable-model-commit",
+            adapter_revision="none",
+            precision="bf16",
+            options={},
+        )
+        with self.assertRaisesRegex(AppConfigError, "backend_revision"):
+            build_runtime(backend_config, data_root=FIXTURE_IMAGE.parent)
+
+    def test_single_image_analysis_does_not_require_reference_annotation(self) -> None:
+        runtime = TransformersRuntime(
+            data_root=FIXTURE_IMAGE.parent,
+            backend=StaticBackend(),
+            backend_revision="test",
+            model_id="Qwen/Qwen3-VL-2B-Instruct",
+            model_revision="test",
+        )
+
+        record = analyze_image(
+            image_path=FIXTURE_IMAGE,
+            runtime=runtime,
+            workload=WORKLOAD,
+        )
+
+        self.assertTrue(record.succeeded)
+        self.assertEqual(record.case_id, "scene")
+
+
+if __name__ == "__main__":
+    unittest.main()

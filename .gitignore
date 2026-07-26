@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 .venv/
+.casebook-test-tmp/
 
 # Local inputs and generated artifacts
 data/raw/

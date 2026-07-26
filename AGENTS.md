@@ -8,7 +8,13 @@
 ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 ```
 
-目标模型为 `Qwen/Qwen3-VL-2B-Instruct`。Transformers 提供正确性参考，TensorRT Edge-LLM 提供 Jetson 运行时。实验序列包括 FP16 基线、领域 LoRA、合并模型和 LLM backbone INT4，并保存每个阶段的实际证据。
+目标模型为 `Qwen/Qwen3-VL-2B-Instruct`。Transformers 实验分为服务器正确性参考和
+Jetson Transformers FP16 板端基线；TensorRT Edge-LLM 提供 Jetson 最终部署运行时。
+服务器结果用于任务正确性、误差分析和训练，不作为板端性能基线。Jetson
+Transformers FP16 与 Jetson TensorRT Edge-LLM 使用相同模型 revision、工作负载和
+数据集进行同机比较。实验序列包括服务器正确性参考、Jetson Transformers FP16、
+TensorRT Edge-LLM FP16、领域 LoRA、合并模型和 LLM backbone INT4，并保存每个阶段的
+实际证据。
 
 项目产出泊车安全提示。风险事件集合包括：
 
@@ -65,10 +71,11 @@ docs/               # 架构、数据卡、部署和报告说明
 ## 实施顺序
 
 1. 实现 `ParkingAssessment`、`ParkingCase`、`ParkingCaseCatalog` 和冻结工作负载配置。
-2. 建立 Transformers Adapter，生成 `InferenceRecord` 并运行质量研究。
-3. 建立 TensorRT Edge-LLM FP16 Adapter，完成 Jetson 运行时研究。
-4. 基于冻结测试集的领域误差分析训练 LoRA，完成合并模型的同口径研究。
-5. 生成 INT4 LLM backbone 版本，完成质量、时延、内存、功耗与温度对比。
+2. 在服务器运行 Transformers 正确性参考，生成 `InferenceRecord` 并完成质量研究。
+3. 在 Jetson 运行 Transformers FP16 板端基线；无法加载或 OOM 也作为明确实验结果。
+4. 建立 TensorRT Edge-LLM FP16 Adapter，完成 Jetson 同机运行时研究。
+5. 基于冻结测试集的领域误差分析训练 LoRA，完成合并模型的同口径研究。
+6. 生成 INT4 LLM backbone 版本，完成质量、时延、内存、功耗与温度对比。
 
 每个阶段保存模型 revision、adapter revision、精度、输入尺寸、prompt、生成参数、数据集版本、执行命令、环境快照和结果状态。
 
@@ -78,6 +85,8 @@ docs/               # 架构、数据卡、部署和报告说明
 - 冻结测试集在 LoRA 调参、量化校准和阈值调整之前确定，并保留人工标注、数据版本和来源信息。
 - 失败记录使用明确类别，包括 JSON 解析失败、模型拒答、超时、显存不足、算子支持状态和任务判断错误。
 - `StudyReport` 记录 JSON 有效率、风险等级准确率、事件 micro-F1、不安全建议率、按类别错误、冷启动、预处理/视觉编码/prefill/decode/端到端时延、p50/p90/p99、首 token 延迟、tokens/s、峰值内存、功耗、温度和失败样例。
+- 服务器 Transformers、Jetson Transformers FP16 和 Jetson TensorRT Edge-LLM
+  分别使用独立 `study_id` 与报告；板端性能结论只比较两个 Jetson runtime。
 
 ## 编码、测试与操作
 

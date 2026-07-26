@@ -1,0 +1,14 @@
+{
+  "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+  "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+  "workload_path": "../workloads/parking_risk_v1.json",
+  "manifest_path": "../../data/manifests/parking_risk_v1.jsonl",
+  "annotations_path": "../../data/annotations/parking_risk_v1.jsonl",
+  "output_directory": "../../artifacts/adapters/parking_lora_v1",
+  "seed": 42,
+  "epochs": 3,
+  "learning_rate": 0.0002,
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05
+}

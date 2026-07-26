@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parksight-vlm"
+version = "0.1.0"
+description = "Parking-scene risk understanding and Jetson runtime studies"
+requires-python = ">=3.10"
+
+[project.scripts]
+parksight-analyze = "parksight_vlm.app.analyze_image:main"
+parksight-study = "parksight_vlm.app.run_study:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

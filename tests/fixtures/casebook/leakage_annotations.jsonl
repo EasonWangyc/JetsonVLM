@@ -1,0 +1,2 @@
+{"case_id":"case-001","assessment":{"schema_version":"parking_risk_v1","risk_level":"medium","events":["narrow_passage"],"evidence":["Vehicles leave a narrow maneuvering corridor."],"driver_advice":["slow_down"]}}
+{"case_id":"case-002","assessment":{"schema_version":"parking_risk_v1","risk_level":"medium","events":["narrow_passage"],"evidence":["Vehicles leave a narrow maneuvering corridor."],"driver_advice":["slow_down"]}}

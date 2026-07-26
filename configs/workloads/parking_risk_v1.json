@@ -1,0 +1,29 @@
+{
+  "workload_id": "parking_risk_v1",
+  "schema_version": "parking_risk_v1",
+  "system_prompt": "你是低速泊车安全评估模型。只依据输入图像中的可见信息进行判断，只输出一个 JSON 对象，不输出 Markdown、解释文字或思维过程。",
+  "user_prompt": "分析这张泊车场景图片。输出字段必须且只能包含 schema_version、risk_level、events、evidence、driver_advice。schema_version 固定为 parking_risk_v1；risk_level 只能是 low、medium 或 high；events 和 driver_advice 只能使用工作负载给定的枚举值；evidence 使用简短可见线索，不得描述不可观察的意图或轨迹。",
+  "input_size": {
+    "width": 448,
+    "height": 448
+  },
+  "generation": {
+    "max_new_tokens": 256,
+    "do_sample": false
+  },
+  "risk_events": [
+    "vru_near_maneuver_path",
+    "vehicle_near_maneuver_path",
+    "fixed_obstacle_near_path",
+    "narrow_passage",
+    "visibility_occlusion",
+    "parking_space_conflict"
+  ],
+  "driver_advice": [
+    "maintain_observation",
+    "slow_down",
+    "yield",
+    "prepare_to_stop",
+    "change_maneuver_when_safe"
+  ]
+}

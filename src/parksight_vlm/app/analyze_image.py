@@ -1,0 +1,73 @@
+"""Single-image parking risk analysis command."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path, PurePosixPath
+
+from parksight_vlm.casebook import DatasetSplit, ParkingCase
+from parksight_vlm.inference import InferenceRecord, RiskRuntime
+from parksight_vlm.workload import FrozenWorkload
+
+from .config import RuntimeConfig
+from .runtime_factory import build_runtime
+
+
+def analyze_image(
+    *, image_path: Path, runtime: RiskRuntime, workload: FrozenWorkload
+) -> InferenceRecord:
+    """Analyze an unlabeled image through an already-composed runtime."""
+    case = ParkingCase(
+        case_id=image_path.stem,
+        image_ref=PurePosixPath(image_path.name),
+        source_group_id=f"single-image:{image_path.stem}",
+        split=DatasetSplit.TEST,
+        reference_assessment=None,
+    )
+    return runtime.analyze(case, workload)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image", required=True, type=Path)
+    parser.add_argument(
+        "--workload",
+        type=Path,
+        default=Path("configs/workloads/parking_risk_v1.json"),
+    )
+    parser.add_argument(
+        "--runtime", choices=("transformers", "tensorrt_edge_llm_http"), required=True
+    )
+    parser.add_argument("--backend-revision", required=True)
+    parser.add_argument("--model-id", default="Qwen/Qwen3-VL-2B-Instruct")
+    parser.add_argument("--model-revision", required=True)
+    parser.add_argument("--adapter-revision", default="none")
+    parser.add_argument("--precision", required=True)
+    parser.add_argument("--edge-url", default="http://127.0.0.1:8000")
+    args = parser.parse_args(argv)
+
+    image_path = args.image.resolve()
+    workload = FrozenWorkload.load(args.workload)
+    options: dict[str, object] = {}
+    if args.runtime == "tensorrt_edge_llm_http":
+        options["base_url"] = args.edge_url
+    runtime = build_runtime(
+        RuntimeConfig(
+            backend=args.runtime,
+            backend_revision=args.backend_revision,
+            model_id=args.model_id,
+            model_revision=args.model_revision,
+            adapter_revision=args.adapter_revision,
+            precision=args.precision,
+            options=options,
+        ),
+        data_root=image_path.parent,
+    )
+    record = analyze_image(image_path=image_path, runtime=runtime, workload=workload)
+    print(json.dumps(record.to_mapping(), ensure_ascii=False, indent=2))
+    return 0 if record.succeeded else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

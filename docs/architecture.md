@@ -75,10 +75,13 @@ src/parksight_vlm/
   app/
     analyze_image.py  # 单图分析命令
     run_study.py      # 批量研究命令
+  flows.py            # 外部训练、合并、导出和构建的计划与执行证据
 configs/
   workloads/parking_risk_v1.json
-  studies/transformers_base.json
-  studies/edgellm_fp16.json
+  studies/transformers_base.json          # 服务器 Transformers 正确性参考
+  studies/edgellm_fp16.json               # Jetson TensorRT Edge-LLM FP16
+  studies/jetson_transformers_fp16.json   # Jetson Transformers FP16 基线
+  flows/*.example.json
 data/
   manifests/parking_risk_v1.jsonl
   annotations/parking_risk_v1.jsonl
@@ -86,6 +89,10 @@ data/
 artifacts/
 reports/
 scripts/
+  train_lora.py
+  merge_lora.py
+  export_model.py
+  build_engine.py
 tests/
   assessment/
   casebook/
@@ -95,7 +102,7 @@ tests/
 
 ## 固定工作负载
 
-`workload` 固定任务语义、prompt、生成参数、输入尺寸、schema version 和泊车风险事件集合。`study` 记录 runtime、模型 revision、adapter revision、精度、样本选择、运行次数和功耗模式。
+`workload` 固定任务语义、prompt、生成参数、输入尺寸、schema version 和泊车风险事件集合。`study` 记录 runtime、backend revision、模型 revision、adapter revision、精度、样本选择、运行次数和功耗模式。
 
 泊车风险事件集合：
 
@@ -110,6 +117,18 @@ tests/
 
 `workload` 保持任务可比性；`study` 表达一次实验的运行条件。该拆分使 FP16、LoRA 和 INT4 结果在同一工作负载下可直接比较。
 
+## Runtime 实验矩阵
+
+| Study | 环境 | Runtime | 作用 | 性能比较 |
+| --- | --- | --- | --- | --- |
+| `transformers_base` | GPU 服务器 | Transformers | 正确性参考、完整质量研究和误差分析 | 不与 Jetson 时延直接比较 |
+| `jetson_transformers_fp16` | Jetson | Transformers FP16 | 板端框架基线；保留成功、OOM 或依赖失败事实 | 与 Jetson Edge-LLM 同机比较 |
+| `edgellm_fp16` | Jetson | TensorRT Edge-LLM FP16 | 最终部署 FP16 基线 | 与 Jetson Transformers FP16 同机比较 |
+
+三个 study 必须冻结相同模型 revision、workload、输入尺寸、prompt、生成参数和测试集。
+服务器结果用于回答模型任务是否正确；Jetson Transformers 与 Jetson Edge-LLM 的
+同机结果用于回答部署优化带来的时延、内存、功耗和温度变化。
+
 ## 测试 seam
 
 1. `ParkingAssessment.from_mapping`：结构化内容的解析与校验。
@@ -117,4 +136,5 @@ tests/
 3. `RiskRuntime.analyze`：Adapter 对泊车样本和工作负载的实际执行。
 4. `StudyRunner.run`：推理记录到研究报告的聚合。
 
-首批实现围绕前两个 seam 展开。运行时 Adapter 与研究运行器接入后，后两个 seam 形成显式集成测试。
+四个 seam 均已有无硬件测试。真实 Transformers、TensorRT Edge-LLM 和 Jetson
+资源采集属于显式集成测试，只有实际执行记录可以进入研究证据。

@@ -1,0 +1,3 @@
+{"case_id":"case-001","image_ref":"raw/case-001.jpg","source_group_id":"sequence-a","split":"test"}
+{"case_id":"case-002","image_ref":"raw/case-002.jpg","source_group_id":"sequence-a","split":"test"}
+{"case_id":"case-003","image_ref":"raw/case-003.jpg","source_group_id":"sequence-b","split":"train"}
