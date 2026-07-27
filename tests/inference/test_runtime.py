@@ -13,12 +13,14 @@ from parksight_vlm.inference import (
     EdgeLlmRuntime,
     EdgeLlmHttpBackend,
     ResourceSnapshot,
+    RuntimeDependencyError,
     RuntimeFailureCategory,
     RuntimeGeneration,
     RuntimeRefusalError,
     StageTimings,
     TransformersRuntime,
 )
+from parksight_vlm.inference.transformers import _require_cuda_architecture
 from parksight_vlm.workload import FrozenWorkload
 
 
@@ -42,6 +44,30 @@ class StaticBackend:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_transformers_backend_rejects_incompatible_cuda_wheel(self) -> None:
+        class FakeCuda:
+            @staticmethod
+            def is_available() -> bool:
+                return True
+
+            @staticmethod
+            def get_device_capability() -> tuple[int, int]:
+                return (8, 7)
+
+            @staticmethod
+            def get_arch_list() -> list[str]:
+                return ["sm_80", "sm_90"]
+
+        class FakeTorch:
+            __version__ = "2.9.1+cu126"
+            cuda = FakeCuda()
+
+        with self.assertRaisesRegex(
+            RuntimeDependencyError,
+            "does not include CUDA kernels for sm_87",
+        ):
+            _require_cuda_architecture(FakeTorch())
+
     def test_transformers_runtime_records_validated_success(self) -> None:
         backend = StaticBackend(
             RuntimeGeneration(

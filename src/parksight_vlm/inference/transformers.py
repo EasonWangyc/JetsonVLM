@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from parksight_vlm.workload import FrozenWorkload
 
@@ -129,6 +129,7 @@ class HuggingFaceQwen3VlBackend:
             raise RuntimeDependencyError(
                 "torch and transformers with Qwen3-VL support are required"
             ) from error
+        _require_cuda_architecture(torch)
         self._torch = torch
         self._processor = AutoProcessor.from_pretrained(
             self._model_id,
@@ -142,6 +143,22 @@ class HuggingFaceQwen3VlBackend:
             attn_implementation=self._attn_implementation,
         )
         self._model.eval()
+
+
+def _require_cuda_architecture(torch_module: Any) -> None:
+    """Reject CUDA wheels that cannot execute kernels on the detected GPU."""
+    if not torch_module.cuda.is_available():
+        return
+    major, minor = torch_module.cuda.get_device_capability()
+    required_architecture = f"sm_{major}{minor}"
+    supported_architectures = tuple(torch_module.cuda.get_arch_list())
+    if supported_architectures and required_architecture not in supported_architectures:
+        supported_text = ", ".join(supported_architectures)
+        raise RuntimeDependencyError(
+            f"installed torch {torch_module.__version__} does not include CUDA "
+            f"kernels for {required_architecture}; supported architectures: "
+            f"{supported_text}"
+        )
 
 
 class TransformersRuntime(RiskRuntime):

@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 ## 1. 当前结论
 
@@ -138,11 +138,50 @@ hf cache verify
 因此本次使用 `HfApi.model_info()` 解析 commit 和文件元数据，并使用本地文件对比与
 权重 SHA-256 完成等价校验，没有为此升级或修改板端 Python 环境。
 
-## 6. 下一阶段
+## 6. Jetson 单图 smoke test 记录
 
-1. 准备一张许可明确的泊车图片和对应最小 case manifest。
-2. 在 Jetson 上执行 Qwen3-VL Transformers FP16 单图 smoke test。
-3. 同步采集启动状态、端到端耗时、CUDA 峰值内存、系统内存和失败事实。
-4. 根据首次结果决定是否调整输入尺寸或生成 token 上限；不改变冻结 JSON schema。
-5. 扩展冻结测试集并运行 Jetson Transformers FP16 `StudyReport`。
-6. 之后再进入服务器正确性参考、LoRA 和 TensorRT Edge-LLM engine 阶段。
+### 2026-07-26：CLI 参数失败
+
+- 命令在模型加载前退出。
+- 原因：当时的单图入口不支持 `--dtype float16`。
+- 结果文件为空，stderr 明确记录 `unrecognized arguments`。
+- 后续 commit `5e2bdfd` 已补齐 `dtype`、`device_map` 和
+  `attn_implementation` 的 CLI 传递与测试。
+
+### 2026-07-27：Transformers FP16 run1
+
+- 代码 revision：`5e2bdfd`
+- 模型 revision：`89644892e4d85e24eaac8bacfd4f463576704203`
+- 配置：`dtype=float16`、`device_map=auto`、`sdpa`
+- 结果：失败，退出码 2，未进入 GPU 计算
+- `InferenceRecord`：`runtime_error`
+- 端到端失败时间：约 15.25 秒
+- stderr：NvMap 约 1.0 GiB 分配返回 error 12，随后 PyTorch CUDA allocator
+  触发 NVML 内部断言
+- `tegrastats`：RAM 峰值约 4.0/7.6 GiB，`GR3D_FREQ` 保持 0%
+
+进一步 CUDA 自检确认当前环境不是 Jetson 可执行构建：
+
+```text
+torch=2.9.1+cu126
+device=Orin
+capability=(8, 7)
+arch_list=['sm_80', 'sm_90']
+64 MiB CUDA tensor: no kernel image is available for execution on the device
+```
+
+当前 torch 来自 PyTorch CUDA 12.6 通用
+`cp312-manylinux_2_28_aarch64` wheel。它能发现 Orin，但不包含 Orin 所需的 `sm_87`
+kernel，因此不能作为 Jetson Transformers 基线环境。后续应建立独立 Python 3.10
+Jetson runtime，使用 JP6/CUDA 12.6 的 Jetson 专用 wheel，或使用 NVIDIA iGPU
+PyTorch 容器；不得覆盖现有 Python 3.12 venv。
+
+## 7. 下一阶段
+
+1. 建立不影响现有 venv 的 Python 3.10 Jetson 专用运行环境。
+2. 先验证 `torch.cuda.get_arch_list()` 包含 `sm_87`，并执行小 tensor CUDA smoke。
+3. 重新执行 Qwen3-VL Transformers FP16 单图 smoke test。
+4. 同步采集启动状态、端到端耗时、CUDA 峰值内存、系统内存和失败事实。
+5. 根据首次结果决定是否调整输入尺寸或生成 token 上限；不改变冻结 JSON schema。
+6. 扩展冻结测试集并运行 Jetson Transformers FP16 `StudyReport`。
+7. 之后再进入服务器正确性参考、LoRA 和 TensorRT Edge-LLM engine 阶段。

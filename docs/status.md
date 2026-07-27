@@ -34,3 +34,13 @@
 
 上述状态说明环境和模型文件已经就绪，不代表真实单图推理或板端基线已经完成。
 具体环境、命令和校验结果见 [`progress.md`](progress.md)。
+
+## 当前板端阻塞
+
+2026-07-27 的首次真实 FP16 模型加载已经生成失败 `InferenceRecord`。当前
+`torch 2.9.1+cu126` 是通用 aarch64 wheel，只包含 `sm_80` 和 `sm_90`，不包含
+Jetson Orin 所需的 `sm_87`。小规模 CUDA tensor 自检同样返回
+`no kernel image is available for execution on the device`。
+
+下一步是建立隔离的 Jetson 专用 PyTorch 环境后重新测试。该失败属于运行时依赖不兼容，
+不是模型 JSON 失败、图片问题或已证实的 FP16 容量不足。
