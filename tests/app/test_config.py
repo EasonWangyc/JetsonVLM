@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from parksight_vlm.app import AppConfigError, AppStudyConfig, RuntimeConfig, build_runtime
-from parksight_vlm.app.analyze_image import analyze_image
+from parksight_vlm.app.analyze_image import analyze_image, main
 from parksight_vlm.inference import RuntimeGeneration, TransformersRuntime
 from parksight_vlm.workload import FrozenWorkload
 
@@ -120,6 +121,53 @@ class AppTests(unittest.TestCase):
 
         self.assertTrue(record.succeeded)
         self.assertEqual(record.case_id, "scene")
+
+    def test_single_image_cli_passes_transformers_loading_options(self) -> None:
+        record = Mock(succeeded=True)
+        record.to_mapping.return_value = {"succeeded": True}
+
+        with (
+            patch(
+                "parksight_vlm.app.analyze_image.build_runtime",
+                return_value=Mock(),
+            ) as build_runtime_mock,
+            patch(
+                "parksight_vlm.app.analyze_image.analyze_image",
+                return_value=record,
+            ),
+            patch("builtins.print"),
+        ):
+            exit_code = main(
+                [
+                    "--image",
+                    str(FIXTURE_IMAGE),
+                    "--runtime",
+                    "transformers",
+                    "--backend-revision",
+                    "transformers==4.57.6",
+                    "--model-revision",
+                    "immutable-model-commit",
+                    "--precision",
+                    "fp16",
+                    "--device-map",
+                    "auto",
+                    "--dtype",
+                    "float16",
+                    "--attn-implementation",
+                    "sdpa",
+                ]
+            )
+
+        runtime_config = build_runtime_mock.call_args.args[0]
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            runtime_config.options,
+            {
+                "device_map": "auto",
+                "dtype": "float16",
+                "attn_implementation": "sdpa",
+            },
+        )
 
 
 if __name__ == "__main__":

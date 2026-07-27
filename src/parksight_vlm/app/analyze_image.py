@@ -44,13 +44,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-revision", required=True)
     parser.add_argument("--adapter-revision", default="none")
     parser.add_argument("--precision", required=True)
+    parser.add_argument("--device-map", default="auto")
+    parser.add_argument("--dtype", default="auto")
+    parser.add_argument("--attn-implementation", default="sdpa")
     parser.add_argument("--edge-url", default="http://127.0.0.1:8000")
     args = parser.parse_args(argv)
 
     image_path = args.image.resolve()
     workload = FrozenWorkload.load(args.workload)
     options: dict[str, object] = {}
-    if args.runtime == "tensorrt_edge_llm_http":
+    if args.runtime == "transformers":
+        options.update(
+            {
+                "device_map": args.device_map,
+                "dtype": args.dtype,
+                "attn_implementation": args.attn_implementation,
+            }
+        )
+    else:
         options["base_url"] = args.edge_url
     runtime = build_runtime(
         RuntimeConfig(

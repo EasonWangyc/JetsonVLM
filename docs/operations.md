@@ -23,11 +23,15 @@ PYTHONPATH=src python3 -m parksight_vlm.app.analyze_image \
   --runtime transformers \
   --backend-revision REPLACE_WITH_TRANSFORMERS_VERSION \
   --model-revision 89644892e4d85e24eaac8bacfd4f463576704203 \
-  --precision bf16
+  --precision bf16 \
+  --device-map auto \
+  --dtype bfloat16 \
+  --attn-implementation sdpa
 ```
 
 命令输出完整 `InferenceRecord`。成功时包含严格校验后的 `assessment`，失败时包含
-明确的失败类别和错误事实。单图分析不要求参考标注。
+明确的失败类别和错误事实。单图分析不要求参考标注。`precision` 是实验身份，
+`dtype` 是实际传给 Transformers 的加载精度，两者必须保持一致。
 
 TensorRT Edge-LLM HTTP Adapter 使用实验性 OpenAI-compatible server：
 
