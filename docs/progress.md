@@ -176,6 +176,17 @@ kernel，因此不能作为 Jetson Transformers 基线环境。后续应建立�
 Jetson runtime，使用 JP6/CUDA 12.6 的 Jetson 专用 wheel，或使用 NVIDIA iGPU
 PyTorch 容器；不得覆盖现有 Python 3.12 venv。
 
+commit `731fa2f` 增加 CUDA 架构预检后，run2 在约 7.09 秒内返回：
+
+```text
+category=dependency_unavailable
+installed torch 2.9.1+cu126 does not include CUDA kernels for sm_87;
+supported architectures: sm_80, sm_90
+```
+
+run2 的 stderr 为空，说明该问题现在由 `InferenceRecord` 稳定记录，不再依赖底层
+NvMap/NVML 错误文本归因。
+
 ## 7. 下一阶段
 
 1. 建立不影响现有 venv 的 Python 3.10 Jetson 专用运行环境。
