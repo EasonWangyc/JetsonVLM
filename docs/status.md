@@ -37,10 +37,14 @@
 
 ## 当前板端阻塞
 
-2026-07-27 的首次真实 FP16 模型加载已经生成失败 `InferenceRecord`。当前
-`torch 2.9.1+cu126` 是通用 aarch64 wheel，只包含 `sm_80` 和 `sm_90`，不包含
-Jetson Orin 所需的 `sm_87`。小规模 CUDA tensor 自检同样返回
-`no kernel image is available for execution on the device`。
+2026-07-28 已建立隔离的 Python 3.10 Jetson runtime。PyTorch 2.9.1 的
+`torch.cuda.get_arch_list()` 返回 `['sm_87']`，小 tensor CUDA kernel 和 29 个
+无硬件测试均通过，原通用 aarch64 wheel 的架构不兼容问题已经解决。
 
-下一步是建立隔离的 Jetson 专用 PyTorch 环境后重新测试。该失败属于运行时依赖不兼容，
-不是模型 JSON 失败、图片问题或已证实的 FP16 容量不足。
+真实 FP16 模型加载仍出现 `NvMapMemAllocInternalTagged ... error 12`。关闭 PyTorch
+CUDA caching allocator 后仍然复现；失败时系统总可用内存尚未耗尽，但 lfb 只剩
+2×4 MiB，GPU 计算尚未开始。该结果与 L4T R36.4.7 的已知 NvMap 问题一致，当前不能
+据此断言 2B FP16 模型本身无法装入 8GB。
+
+下一步是评估升级到包含 r36.5 的 JetPack 6.2.2，升级后按相同 workload 重跑。
+完整命令、结果和原始证据索引见 [`execution-report.md`](execution-report.md)。

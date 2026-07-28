@@ -67,4 +67,5 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 [docs/status.md](docs/status.md)，评测口径见
 [docs/evaluation.md](docs/evaluation.md)，领域术语见 [CONTEXT.md](CONTEXT.md)，
 数据 JSONL 约定见 [docs/data.md](docs/data.md)，当前环境、模型缓存、执行命令和
-下一阶段见 [docs/progress.md](docs/progress.md)。
+下一阶段见 [docs/progress.md](docs/progress.md)，从项目开始至今的命令、结果与
+证据见 [docs/execution-report.md](docs/execution-report.md)。

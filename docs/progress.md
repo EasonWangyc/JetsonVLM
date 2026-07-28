@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-07-27
+更新时间：2026-07-28
 
 ## 1. 当前结论
 
@@ -16,8 +16,13 @@ ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 Jetson 环境已经完成连接和基础检查，指定 revision 的
 `Qwen/Qwen3-VL-2B-Instruct` 已下载到板端并完成缓存完整性校验。
 
-当前尚未执行真实单图推理、冻结测试集研究、LoRA 训练或 TensorRT Edge-LLM engine
-构建。因此，“代码链路已建立”和“模型文件已就绪”不等同于“板端基线已经完成”。
+当前已执行真实单图 FP16 smoke test，但尚未成功生成模型输出。原 Python 3.12
+环境的 torch 缺少 `sm_87`；建立 Jetson Python 3.10 专用环境并验证 `sm_87` 后，
+模型加载仍因 L4T R36.4.7 的 NvMap 大块内存分配错误失败。冻结测试集研究、LoRA
+训练和 TensorRT Edge-LLM engine 构建尚未执行。
+
+从项目开始至今的完整命令、结果与证据见
+[`execution-report.md`](execution-report.md)。
 
 ## 2. 已完成工作
 
@@ -187,12 +192,24 @@ supported architectures: sm_80, sm_90
 run2 的 stderr 为空，说明该问题现在由 `InferenceRecord` 稳定记录，不再依赖底层
 NvMap/NVML 错误文本归因。
 
+### 2026-07-28：Jetson 专用环境与 run3-run5
+
+- 建立 `/home/ubuntu/JetsonVLM/.venv-jetson`，Python 3.10.12。
+- 安装 Jetson AI Lab PyTorch 2.9.1 和 torchvision 0.24.1。
+- 安装 cuDSS 0.4.0.2.post1 并显式配置其动态库路径。
+- `torch.cuda.get_arch_list()` 返回 `['sm_87']`，小 tensor CUDA kernel 成功。
+- 新环境运行 29 个无硬件测试，全部通过。
+- run3 因缺少 torchvision 失败，随后补齐依赖。
+- run4 在模型加载期间出现 NvMap error 12 和 PyTorch NVML allocator assertion。
+- run5 关闭 CUDA caching allocator 后仍出现 NvMap error 12，并被记录为
+  `out_of_memory`。
+- run5 RAM 峰值约 4005/7620 MiB，swap 为 0，最小 lfb 为 2×4 MiB，
+  `GR3D_FREQ` 为 0%；尚未进入视觉编码或生成。
+
 ## 7. 下一阶段
 
-1. 建立不影响现有 venv 的 Python 3.10 Jetson 专用运行环境。
-2. 先验证 `torch.cuda.get_arch_list()` 包含 `sm_87`，并执行小 tensor CUDA smoke。
-3. 重新执行 Qwen3-VL Transformers FP16 单图 smoke test。
-4. 同步采集启动状态、端到端耗时、CUDA 峰值内存、系统内存和失败事实。
-5. 根据首次结果决定是否调整输入尺寸或生成 token 上限；不改变冻结 JSON schema。
-6. 扩展冻结测试集并运行 Jetson Transformers FP16 `StudyReport`。
-7. 之后再进入服务器正确性参考、LoRA 和 TensorRT Edge-LLM engine 阶段。
+1. 备份板端环境并评估升级到包含 r36.5 的 JetPack 6.2.2。
+2. 升级后重新验证 L4T、CUDA、`sm_87` 和小 tensor kernel。
+3. 使用相同模型 commit、图片、workload 和 FP16 参数执行 run6。
+4. 如果 run6 成功，再扩展冻结测试集并生成 Jetson Transformers `StudyReport`。
+5. 之后进入服务器正确性参考、LoRA 和 TensorRT Edge-LLM engine 阶段。

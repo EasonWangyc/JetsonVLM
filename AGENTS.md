@@ -96,3 +96,15 @@ docs/               # 架构、数据卡、部署和报告说明
 - 标准无硬件测试使用 `uv run python -m unittest discover -s tests`；修改后运行 `git diff --check`。
 - 项目配置固定依赖和模型版本。ONNX Runtime 用于导出和数值一致性研究，TensorRT Edge-LLM 用于 Jetson 运行时研究。
 - 系统依赖、远程 Jetson、大模型权重、Git 提交、推送和历史操作遵循明确授权流程。
+
+## 命令执行协作方式
+
+- 默认由用户亲自执行本机、服务器和 Jetson 终端命令。Codex 提供命令、执行目的、
+  预期输出和成功/失败判断标准，等待用户贴回结果后再给下一步。
+- Jetson 命令以 SSH 登录后的 Bash 形式给出，不把远端 Bash 命令包装成 Windows
+  PowerShell 一键执行。
+- 安装依赖、下载模型、模型转换、GPU 推理、benchmark、系统升级、重启、Git
+  commit/push 等操作，不由 Codex 代执行，除非用户在当前请求中明确要求 Codex 执行。
+- 较长流程按可验证的小步骤给命令；每一步先解释输出，避免一次给出无法定位失败位置
+  的大段脚本。
+- Codex 可以按请求编辑仓库文件；修改完成后给出由用户执行的测试和 Git 命令。
