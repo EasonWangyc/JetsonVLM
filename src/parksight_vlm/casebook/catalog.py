@@ -1,8 +1,8 @@
-"""JSONL loading and invariants for parking-case catalogs.
+"""泊车样本目录的 JSONL 加载与不变量校验。
 
-Manifest rows use exactly ``case_id``, ``image_ref``, ``source_group_id`` and
-``split``. Annotation rows use exactly ``case_id`` and ``assessment``, where
-``assessment`` follows :class:`ParkingAssessment`'s strict JSON contract.
+Manifest 行必须且只能使用 ``case_id``、``image_ref``、``source_group_id`` 和
+``split``。Annotation 行必须且只能使用 ``case_id`` 和 ``assessment``，其中
+``assessment`` 遵循 :class:`ParkingAssessment` 的严格 JSON 契约。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from .model import CasebookValidationError, DatasetSplit, ParkingCase
 
 @dataclass(frozen=True, slots=True)
 class ParkingCaseCatalog:
-    """Validated parking samples loaded from one manifest and one annotation file."""
+    """从一份 manifest 和一份 annotation 文件加载并校验的泊车样本。"""
 
     cases: tuple[ParkingCase, ...]
     manifest_path: Path
@@ -32,7 +32,7 @@ class ParkingCaseCatalog:
         manifest_path: Path | str,
         annotations_path: Path | str,
     ) -> "ParkingCaseCatalog":
-        """Load matching JSONL metadata and reference-assessment records."""
+        """加载相互匹配的 JSONL 元数据和参考评估记录。"""
         resolved_manifest_path = Path(manifest_path)
         resolved_annotations_path = Path(annotations_path)
         manifest_records = _read_jsonl(resolved_manifest_path)
@@ -73,7 +73,7 @@ class ParkingCaseCatalog:
         return catalog
 
     def validate(self) -> None:
-        """Validate catalog-wide identity and source-group split invariants."""
+        """校验目录范围内的身份与来源组划分不变量。"""
         if not self.cases:
             raise CasebookValidationError("case catalog must contain at least one case")
 
@@ -97,7 +97,7 @@ class ParkingCaseCatalog:
                 )
 
     def cases_in_split(self, split: DatasetSplit) -> tuple[ParkingCase, ...]:
-        """Return catalog cases selected for one dataset partition."""
+        """返回目录中属于指定数据集划分的样本。"""
         return tuple(parking_case for parking_case in self.cases if parking_case.split == split)
 
 

@@ -1,4 +1,4 @@
-"""Compose runtime adapters from validated application configuration."""
+"""根据已校验的应用配置组合 Runtime Adapter。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .config import AppConfigError, RuntimeConfig
 
 
 def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
-    """Build a runtime without loading model weights until its first execution."""
+    """构建 Runtime，并将模型权重加载延迟到首次执行。"""
     if (
         config.backend_revision == "main"
         or config.backend_revision.startswith("replace-with-")

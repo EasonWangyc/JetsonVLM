@@ -1,4 +1,4 @@
-"""Execute one configured study and write its full evidence report."""
+"""执行一项已配置研究并写入完整证据报告。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .runtime_factory import build_runtime
 
 
 def run_configured_study(config: AppStudyConfig) -> StudyReport:
-    """Compose the catalog, runtime, and runner from a validated config."""
+    """根据已校验配置组合样本目录、Runtime 和 Runner。"""
     casebook = ParkingCaseCatalog.load(
         config.manifest_path,
         config.annotations_path,

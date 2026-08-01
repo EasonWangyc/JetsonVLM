@@ -1,4 +1,4 @@
-"""Validate or explicitly execute the domain LoRA training flow."""
+"""校验或显式执行领域 LoRA 训练流程。"""
 
 from _flow_cli import run_stage_cli
 

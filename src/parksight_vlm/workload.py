@@ -1,4 +1,4 @@
-"""Frozen task configuration shared by every inference runtime."""
+"""所有推理 Runtime 共用的冻结任务配置。"""
 
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ from parksight_vlm.assessment import (
 
 
 class WorkloadValidationError(ValueError):
-    """Raised when a workload configuration is incomplete or inconsistent."""
+    """当 workload 配置不完整或不一致时抛出。"""
 
 
 @dataclass(frozen=True, slots=True)
 class InputSize:
-    """Frozen image dimensions supplied to a runtime adapter."""
+    """提供给 Runtime Adapter 的冻结图片尺寸。"""
 
     width: int
     height: int
@@ -30,7 +30,7 @@ class InputSize:
 
 @dataclass(frozen=True, slots=True)
 class GenerationParameters:
-    """Backend-independent text generation settings used by the workload."""
+    """workload 使用的后端无关文本生成参数。"""
 
     max_new_tokens: int
     do_sample: bool
@@ -38,7 +38,7 @@ class GenerationParameters:
 
 @dataclass(frozen=True, slots=True)
 class FrozenWorkload:
-    """Versioned parking-risk task definition independent of model runtime."""
+    """独立于模型 Runtime、带版本的泊车风险任务定义。"""
 
     workload_id: str
     schema_version: str
@@ -51,7 +51,7 @@ class FrozenWorkload:
 
     @classmethod
     def load(cls, path: Path | str) -> "FrozenWorkload":
-        """Load a UTF-8 JSON workload file."""
+        """加载 UTF-8 编码的 JSON workload 文件。"""
         workload_path = Path(path)
         try:
             payload = json.loads(workload_path.read_text(encoding="utf-8"))
@@ -67,7 +67,7 @@ class FrozenWorkload:
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "FrozenWorkload":
-        """Parse and validate a strict workload mapping."""
+        """解析并校验严格的 workload 映射。"""
         if not isinstance(payload, Mapping):
             raise WorkloadValidationError("workload payload must be a mapping")
         _require_exact_fields(
@@ -115,7 +115,7 @@ class FrozenWorkload:
         )
 
     def to_mapping(self) -> dict[str, Any]:
-        """Return the canonical JSON-compatible workload representation."""
+        """返回规范的 JSON 兼容 workload 表示。"""
         return {
             "workload_id": self.workload_id,
             "schema_version": self.schema_version,
@@ -135,7 +135,7 @@ class FrozenWorkload:
 
     @property
     def fingerprint(self) -> str:
-        """Return a stable SHA-256 digest for report provenance."""
+        """返回用于报告溯源的稳定 SHA-256 摘要。"""
         canonical_json = json.dumps(
             self.to_mapping(),
             ensure_ascii=False,
@@ -146,7 +146,7 @@ class FrozenWorkload:
 
     @property
     def identity(self) -> str:
-        """Return a compact workload identity suitable for inference records."""
+        """返回适合写入推理记录的紧凑 workload 身份。"""
         return f"{self.workload_id}@sha256:{self.fingerprint}"
 
 

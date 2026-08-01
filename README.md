@@ -1,6 +1,6 @@
-# ParkSight-VLM
+# JetsonVLM
 
-面向低速泊车场景的单图风险理解、领域 LoRA 适配与 Jetson 运行时评测项目。
+基于Jetson Orin Nano和TensorRT-edge-llm框架，对Qwen-VL-2B-Instruct进行微调、量化、部署和推理，用于实时端侧场景。
 
 ```text
 ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
@@ -46,8 +46,7 @@ docs/             # 项目文档
 
 - 服务器 Transformers：正确性参考、完整质量研究、误差分析和 LoRA 训练。
 - Jetson Transformers FP16：板端原生框架基线，记录可运行性、OOM、时延和内存。
-- Jetson TensorRT Edge-LLM：最终部署 runtime，与 Jetson Transformers 在同一工作负载
-  下比较 FP16 和后续 INT4 结果。
+- Jetson TensorRT Edge-LLM：最终部署 runtime，与 Jetson Transformers 在同一工作负载下比较 FP16 和后续 INT4 结果。
 
 服务器性能不用于证明 Jetson 加速收益；部署性能结论来自 Jetson 同机实验。
 

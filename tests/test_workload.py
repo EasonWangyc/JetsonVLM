@@ -1,4 +1,4 @@
-"""Tests for frozen workload configuration and provenance."""
+"""冻结 workload 配置与溯源测试。"""
 
 from __future__ import annotations
 

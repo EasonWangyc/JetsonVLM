@@ -1,4 +1,4 @@
-"""Integration tests for StudyRunner quality, performance, and failures."""
+"""StudyRunner 质量、性能与失败处理集成测试。"""
 
 from __future__ import annotations
 

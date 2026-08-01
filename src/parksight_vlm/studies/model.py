@@ -1,4 +1,4 @@
-"""Immutable study configuration, metric, and report objects."""
+"""不可变的研究配置、指标和报告对象。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from parksight_vlm.workload import FrozenWorkload
 
 
 class StudyValidationError(ValueError):
-    """Raised when a study definition or selected workload is invalid."""
+    """当研究定义或选定 workload 无效时抛出。"""
 
 
 @dataclass(frozen=True, slots=True)
 class StudyDefinition:
-    """One repeatable study over a workload and dataset partition."""
+    """基于一个 workload 和数据集划分的可重复研究。"""
 
     study_id: str
     workload: FrozenWorkload
@@ -142,7 +142,7 @@ class PerformanceMetrics:
 
 @dataclass(frozen=True, slots=True)
 class StudyReport:
-    """Complete study evidence, including every underlying inference record."""
+    """完整研究证据，包括全部底层推理记录。"""
 
     study_identity: Mapping[str, Any]
     environment_snapshot: Mapping[str, Any]
@@ -162,7 +162,7 @@ class StudyReport:
         }
 
     def write_json(self, path: Path | str) -> None:
-        """Write the full report as human-readable UTF-8 JSON."""
+        """将完整报告写为便于阅读的 UTF-8 JSON。"""
         report_path = Path(path)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(

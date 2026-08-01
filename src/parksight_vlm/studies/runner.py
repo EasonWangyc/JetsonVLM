@@ -1,4 +1,4 @@
-"""StudyRunner orchestration from catalog cases to one report."""
+"""StudyRunner 从目录样本到单份报告的编排逻辑。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from .quality import compute_quality_metrics
 
 
 class StudyRunner:
-    """Run a frozen study without depending on a concrete inference backend."""
+    """运行冻结研究，且不依赖具体推理后端。"""
 
     def __init__(
         self,

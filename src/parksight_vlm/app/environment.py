@@ -1,4 +1,4 @@
-"""Read-only environment snapshot for study provenance."""
+"""用于研究溯源的只读环境快照。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 
 
 def capture_environment() -> dict[str, Any]:
-    """Capture portable host facts and Jetson L4T metadata when available."""
+    """采集可移植的主机事实，并在可用时采集 Jetson L4T 元数据。"""
     snapshot: dict[str, Any] = {
         "hostname": socket.gethostname(),
         "platform": platform.platform(),

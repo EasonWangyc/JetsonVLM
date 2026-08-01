@@ -1,1 +1,1 @@
-"""Inference module tests."""
+"""推理模块测试。"""

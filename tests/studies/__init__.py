@@ -1,1 +1,1 @@
-"""Study module tests."""
+"""研究模块测试。"""

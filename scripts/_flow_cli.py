@@ -1,4 +1,4 @@
-"""Shared CLI behavior for explicit external model-flow entry points."""
+"""显式外部模型流程入口共用的 CLI 行为。"""
 
 from __future__ import annotations
 

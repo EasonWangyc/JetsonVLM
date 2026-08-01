@@ -1,4 +1,4 @@
-"""Strict JSON contract for parking risk assessments."""
+"""泊车风险评估的严格 JSON 契约。"""
 
 from .model import (
     ASSESSMENT_SCHEMA_VERSION,

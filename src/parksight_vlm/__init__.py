@@ -1,1 +1,1 @@
-"""ParkSight-VLM domain modules and application entry points."""
+"""ParkSight-VLM 领域模块与应用入口。"""

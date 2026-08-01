@@ -1,4 +1,4 @@
-"""Backend-independent inference execution and failure recording."""
+"""后端无关的推理执行与失败记录。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from parksight_vlm.workload import FrozenWorkload
 
 
 class RuntimeFailureCategory(str, Enum):
-    """Stable failure categories used by studies and reports."""
+    """研究和报告使用的稳定失败类别。"""
 
     INPUT_ERROR = "input_error"
     DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
@@ -30,20 +30,20 @@ class RuntimeFailureCategory(str, Enum):
 
 
 class RuntimeDependencyError(RuntimeError):
-    """Raised by an adapter when a required runtime dependency is absent."""
+    """当缺少必要的 Runtime 依赖时由 Adapter 抛出。"""
 
 
 class RuntimeUnsupportedError(RuntimeError):
-    """Raised when the runtime cannot execute a model operator or configuration."""
+    """当 Runtime 无法执行模型算子或配置时抛出。"""
 
 
 class RuntimeRefusalError(RuntimeError):
-    """Raised when a backend explicitly identifies a model refusal."""
+    """当后端明确识别出模型拒答时抛出。"""
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeIdentity:
-    """Configuration that identifies one executable model runtime."""
+    """标识一个可执行模型 Runtime 的配置。"""
 
     backend: str
     backend_revision: str
@@ -77,7 +77,7 @@ class RuntimeIdentity:
 
 @dataclass(frozen=True, slots=True)
 class StageTimings:
-    """Optional stage-level latency facts measured in milliseconds."""
+    """可选的阶段级时延事实，单位为毫秒。"""
 
     preprocess_ms: float | None = None
     vision_encode_ms: float | None = None
@@ -106,7 +106,7 @@ class StageTimings:
 
 @dataclass(frozen=True, slots=True)
 class ResourceSnapshot:
-    """Optional runtime resource facts captured by a backend or board probe."""
+    """由后端或板端探针采集的可选 Runtime 资源事实。"""
 
     peak_memory_mb: float | None = None
     average_power_w: float | None = None
@@ -127,7 +127,7 @@ class ResourceSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeFailure:
-    """A categorized runtime failure preserved instead of forged output."""
+    """分类保存的 Runtime 失败，用于避免伪造业务输出。"""
 
     category: RuntimeFailureCategory
     message: str
@@ -143,7 +143,7 @@ class RuntimeFailure:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeGeneration:
-    """Raw backend generation plus facts measured during execution."""
+    """后端原始生成结果及执行期间的实测事实。"""
 
     raw_output: str
     stage_timings: StageTimings = field(default_factory=StageTimings)
@@ -159,7 +159,7 @@ class RuntimeGeneration:
 
 @dataclass(frozen=True, slots=True)
 class InferenceRecord:
-    """All available facts from one runtime execution."""
+    """一次 Runtime 执行产生的全部可用事实。"""
 
     case_id: str
     runtime_identity: RuntimeIdentity
@@ -198,7 +198,7 @@ class InferenceRecord:
 
 
 class RiskRuntime(ABC):
-    """Template interface that turns backend execution into an inference record."""
+    """将后端执行转换为推理记录的模板接口。"""
 
     def __init__(self, *, data_root: Path, identity: RuntimeIdentity) -> None:
         self._data_root = data_root
@@ -209,7 +209,7 @@ class RiskRuntime(ABC):
         return self._identity
 
     def analyze(self, case: ParkingCase, workload: FrozenWorkload) -> InferenceRecord:
-        """Execute one case and preserve either validated output or failure facts."""
+        """执行一个样本，并保存校验后的输出或失败事实。"""
         started_at_utc = datetime.now(timezone.utc).isoformat()
         start_time = time.perf_counter()
         generation: RuntimeGeneration | None = None
@@ -222,7 +222,7 @@ class RiskRuntime(ABC):
             raw_output = generation.raw_output
             payload = json.loads(raw_output)
             assessment = ParkingAssessment.from_mapping(payload)
-        except Exception as error:  # The record is the explicit runtime failure boundary.
+        except Exception as error:  # 推理记录是明确的 Runtime 失败边界。
             failure = _classify_failure(error)
 
         end_to_end_ms = (time.perf_counter() - start_time) * 1000.0
@@ -250,7 +250,7 @@ class RiskRuntime(ABC):
 
     @abstractmethod
     def _generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
-        """Invoke the concrete backend and return only actually measured facts."""
+        """调用具体后端，并且只返回实际测得的事实。"""
 
 
 def _classify_failure(error: Exception) -> RuntimeFailure:

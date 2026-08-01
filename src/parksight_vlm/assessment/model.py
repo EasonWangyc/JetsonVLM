@@ -1,8 +1,7 @@
-"""Parking-risk assessment data contract.
+"""泊车风险评估数据契约。
 
-The model output and the human reference annotation share this representation.
-It deliberately validates only the JSON contract; task-level correctness is
-evaluated later by the studies module.
+模型输出与人工参考标注共用此表示。这里有意只校验 JSON 契约；任务层面的正确性
+由 studies 模块在后续评估。
 """
 
 from __future__ import annotations
@@ -18,11 +17,11 @@ EnumType = TypeVar("EnumType", bound=Enum)
 
 
 class AssessmentValidationError(ValueError):
-    """Raised when a payload does not conform to the assessment contract."""
+    """当载荷不符合评估契约时抛出。"""
 
 
 class RiskLevel(str, Enum):
-    """Overall parking risk level."""
+    """泊车场景的总体风险等级。"""
 
     LOW = "low"
     MEDIUM = "medium"
@@ -30,7 +29,7 @@ class RiskLevel(str, Enum):
 
 
 class ParkingRiskEvent(str, Enum):
-    """Observable parking risk events in the frozen workload."""
+    """冻结 workload 中可观察的泊车风险事件。"""
 
     VRU_NEAR_MANEUVER_PATH = "vru_near_maneuver_path"
     VEHICLE_NEAR_MANEUVER_PATH = "vehicle_near_maneuver_path"
@@ -41,7 +40,7 @@ class ParkingRiskEvent(str, Enum):
 
 
 class DriverAdvice(str, Enum):
-    """Allowed parking-safety prompts for the driver."""
+    """允许提供给驾驶员的泊车安全提示。"""
 
     MAINTAIN_OBSERVATION = "maintain_observation"
     SLOW_DOWN = "slow_down"
@@ -52,7 +51,7 @@ class DriverAdvice(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ParkingAssessment:
-    """A validated parking risk assessment that can be serialized as JSON."""
+    """经过校验且可序列化为 JSON 的泊车风险评估。"""
 
     schema_version: str
     risk_level: RiskLevel
@@ -62,7 +61,7 @@ class ParkingAssessment:
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "ParkingAssessment":
-        """Parse and validate a strict JSON-compatible mapping."""
+        """解析并校验严格的 JSON 兼容映射。"""
         if not isinstance(payload, Mapping):
             raise AssessmentValidationError("assessment payload must be a mapping")
 
@@ -111,7 +110,7 @@ class ParkingAssessment:
         )
 
     def to_mapping(self) -> dict[str, Any]:
-        """Return a JSON-compatible representation using the frozen field names."""
+        """使用冻结字段名返回 JSON 兼容表示。"""
         return {
             "schema_version": self.schema_version,
             "risk_level": self.risk_level.value,

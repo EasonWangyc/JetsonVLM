@@ -1,4 +1,4 @@
-"""Tests for app configuration, runtime construction, and unlabeled analysis."""
+"""应用配置、Runtime 构建与无标注分析测试。"""
 
 from __future__ import annotations
 

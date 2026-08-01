@@ -1,4 +1,4 @@
-"""Domain objects for annotated parking-scene samples."""
+"""带标注泊车场景样本的领域对象。"""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from parksight_vlm.assessment import ParkingAssessment
 
 
 class CasebookValidationError(ValueError):
-    """Raised when case metadata or a catalog invariant is invalid."""
+    """当样本元数据或目录不变量无效时抛出。"""
 
 
 class DatasetSplit(str, Enum):
-    """Dataset partitions used by quality studies."""
+    """质量研究使用的数据集划分。"""
 
     TRAIN = "train"
     VALIDATION = "validation"
@@ -23,7 +23,7 @@ class DatasetSplit(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ParkingCase:
-    """One parking image together with its source group and reference label."""
+    """一张泊车图片及其来源组和参考标注。"""
 
     case_id: str
     image_ref: PurePosixPath
@@ -32,7 +32,7 @@ class ParkingCase:
     reference_assessment: ParkingAssessment | None
 
     def resolve_image(self, data_root: Path, *, require_exists: bool = False) -> Path:
-        """Resolve an image reference below ``data_root`` without escaping it."""
+        """在不越出 ``data_root`` 的前提下解析图片引用。"""
         root = data_root.resolve()
         image_path = (root / Path(*self.image_ref.parts)).resolve()
         try:

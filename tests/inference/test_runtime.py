@@ -1,4 +1,4 @@
-"""Tests for runtime execution records and failure classification."""
+"""Runtime 执行记录与失败分类测试。"""
 
 from __future__ import annotations
 

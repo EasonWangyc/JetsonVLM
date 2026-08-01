@@ -1,4 +1,4 @@
-"""Validate or explicitly execute the LoRA merge flow."""
+"""校验或显式执行 LoRA 合并流程。"""
 
 from _flow_cli import run_stage_cli
 

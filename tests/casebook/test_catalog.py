@@ -1,4 +1,4 @@
-"""Tests for JSONL parking-case catalog loading and split invariants."""
+"""JSONL 泊车样本目录加载与划分不变量测试。"""
 
 from __future__ import annotations
 

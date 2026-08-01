@@ -1,4 +1,4 @@
-"""Auditable plans for training, merge, export, and engine-build commands."""
+"""训练、合并、导出和 engine 构建命令的可审计计划。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any
 
 
 class FlowValidationError(ValueError):
-    """Raised when an external model-flow plan is incomplete or inconsistent."""
+    """当外部模型流程计划不完整或不一致时抛出。"""
 
 
 FLOW_STAGES = frozenset({"train_lora", "merge_lora", "export_model", "build_engine"})
@@ -22,7 +22,7 @@ FLOW_STAGES = frozenset({"train_lora", "merge_lora", "export_model", "build_engi
 
 @dataclass(frozen=True, slots=True)
 class ExternalFlowPlan:
-    """A reviewed command plus the inputs and outputs that make it auditable."""
+    """经过审核的命令，以及使其可审计的输入和输出。"""
 
     flow_id: str
     stage: str
@@ -162,7 +162,7 @@ class ExternalFlowPlan:
         }
 
     def execute(self) -> "ExternalFlowResult":
-        """Execute only after the caller explicitly selects the execute path."""
+        """仅在调用方明确选择执行路径后运行。"""
         readiness = self.readiness_mapping()
         if not readiness["ready"]:
             raise FlowValidationError(

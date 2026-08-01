@@ -1,1 +1,1 @@
-"""Assessment module tests."""
+"""评估模块测试。"""

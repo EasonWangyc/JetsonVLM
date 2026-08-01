@@ -1,4 +1,4 @@
-"""Study definitions, metrics, reports, and execution runner."""
+"""研究定义、指标、报告与执行 Runner。"""
 
 from .model import (
     PerformanceMetrics,

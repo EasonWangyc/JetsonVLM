@@ -1,4 +1,4 @@
-"""Single-image parking risk analysis command."""
+"""单图泊车风险分析命令。"""
 
 from __future__ import annotations
 
@@ -15,20 +15,20 @@ from .runtime_factory import build_runtime
 
 
 def analyze_image(
-    *, image_path: Path, runtime: RiskRuntime, workload: FrozenWorkload
+    *, image_path: Path, runtime: RiskRuntime, workload: FrozenWorkload # *表明后续参数必须写出参数名
 ) -> InferenceRecord:
-    """Analyze an unlabeled image through an already-composed runtime."""
+    """通过已经组合完成的 Runtime 分析一张无标注图片。"""
     case = ParkingCase(
         case_id=image_path.stem,
-        image_ref=PurePosixPath(image_path.name),
-        source_group_id=f"single-image:{image_path.stem}",
+        image_ref=PurePosixPath(image_path.name),   # 文件名称
+        source_group_id=f"single-image:{image_path.stem}", # 使用stem得到无后缀的文件名称
         split=DatasetSplit.TEST,
         reference_assessment=None,
     )
     return runtime.analyze(case, workload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int: # 当 argv=None 时，argparse 自动读取真实命令行参数
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument(

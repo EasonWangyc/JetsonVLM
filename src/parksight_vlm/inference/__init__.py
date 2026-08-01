@@ -1,4 +1,4 @@
-"""Runtime adapters and immutable inference execution records."""
+"""Runtime Adapter 与不可变推理执行记录。"""
 
 from .edge_llm import EdgeLlmBackend, EdgeLlmHttpBackend, EdgeLlmRuntime
 from .runtime import (

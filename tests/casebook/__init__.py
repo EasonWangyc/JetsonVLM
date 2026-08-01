@@ -1,1 +1,1 @@
-"""Casebook module tests."""
+"""样本目录模块测试。"""

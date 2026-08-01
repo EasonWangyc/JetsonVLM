@@ -1,4 +1,4 @@
-"""Strict application configuration that composes domain modules."""
+"""用于组合领域模块的严格应用配置。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from parksight_vlm.workload import FrozenWorkload
 
 
 class AppConfigError(ValueError):
-    """Raised when runtime or study application configuration is invalid."""
+    """当 Runtime 或研究应用配置无效时抛出。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +62,7 @@ class RuntimeConfig:
 
 @dataclass(frozen=True, slots=True)
 class AppStudyConfig:
-    """Paths and runtime settings required to execute one StudyDefinition."""
+    """执行一个 StudyDefinition 所需的路径和 Runtime 设置。"""
 
     study: StudyDefinition
     runtime: RuntimeConfig

@@ -1,1 +1,1 @@
-"""Application composition tests."""
+"""应用组合测试。"""

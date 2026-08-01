@@ -1,4 +1,4 @@
-"""Application composition and command-line entry points."""
+"""应用组合与命令行入口。"""
 
 from .config import AppConfigError, AppStudyConfig, RuntimeConfig
 from .environment import capture_environment

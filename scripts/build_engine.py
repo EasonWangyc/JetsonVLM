@@ -1,4 +1,4 @@
-"""Validate or explicitly execute the TensorRT Edge-LLM engine-build flow."""
+"""校验或显式执行 TensorRT Edge-LLM engine 构建流程。"""
 
 from _flow_cli import run_stage_cli
 

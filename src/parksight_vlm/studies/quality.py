@@ -1,4 +1,4 @@
-"""Task-quality metrics computed from inference records and reference labels."""
+"""根据推理记录和参考标注计算任务质量指标。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def compute_quality_metrics(
     records: Sequence[InferenceRecord],
     references: Mapping[str, ParkingAssessment],
 ) -> QualityMetrics:
-    """Compute strict-JSON validity and task metrics over all executions."""
+    """基于全部执行计算严格 JSON 有效率和任务指标。"""
     if not records:
         raise StudyValidationError("quality metrics require at least one inference record")
 
@@ -79,7 +79,7 @@ def compute_quality_metrics(
 def _is_unsafe_advice(
     reference: ParkingAssessment, predicted: ParkingAssessment | None
 ) -> bool:
-    """Apply the v1 conservative safety policy used by the quality study."""
+    """应用质量研究所使用的 v1 保守安全策略。"""
     risk_requires_stop = reference.risk_level == RiskLevel.HIGH
     yield_events = {
         ParkingRiskEvent.VRU_NEAR_MANEUVER_PATH,

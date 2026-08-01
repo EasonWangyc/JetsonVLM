@@ -1,4 +1,4 @@
-"""TensorRT Edge-LLM runtime adapters."""
+"""TensorRT Edge-LLM Runtime Adapter。"""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from .runtime import RiskRuntime, RuntimeGeneration, RuntimeIdentity
 
 
 class EdgeLlmBackend(Protocol):
-    """Executable Edge-LLM seam implemented against the installed Jetson runtime."""
+    """面向已安装 Jetson Runtime 实现的可执行 Edge-LLM 接口。"""
 
     def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
-        """Invoke the engine and return its raw output and measured facts."""
+        """调用 engine 并返回原始输出和实测事实。"""
 
 
 class EdgeLlmHttpBackend:
-    """Client for the experimental Edge-LLM OpenAI-compatible server."""
+    """实验性 Edge-LLM OpenAI-compatible server 客户端。"""
 
     def __init__(
         self,
@@ -72,7 +72,7 @@ class EdgeLlmHttpBackend:
 
 
 class EdgeLlmRuntime(RiskRuntime):
-    """Adapter that records actual TensorRT Edge-LLM backend executions."""
+    """记录 TensorRT Edge-LLM 后端实际执行事实的 Adapter。"""
 
     def __init__(
         self,

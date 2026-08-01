@@ -1,4 +1,4 @@
-"""Transformers runtime adapter and Qwen3-VL reference backend."""
+"""Transformers Runtime Adapter 与 Qwen3-VL 参考后端。"""
 
 from __future__ import annotations
 
@@ -18,15 +18,15 @@ from .runtime import (
 )
 
 
-class TransformersBackend(Protocol):
-    """Executable Transformers seam implemented by the model integration layer."""
+class TransformersBackend(Protocol): # 类似cpp中类中的虚函数
+    """由模型集成层实现的可执行 Transformers 接口。"""
 
     def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
-        """Run the model and return its raw output and measured facts."""
+        """运行模型并返回原始输出和实测事实。"""
 
 
 class HuggingFaceQwen3VlBackend:
-    """Lazy Qwen3-VL backend following the upstream Transformers chat API."""
+    """遵循上游 Transformers chat API 的 Qwen3-VL 延迟加载后端。"""
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class HuggingFaceQwen3VlBackend:
         self._dtype = dtype
         self._attn_implementation = attn_implementation
         self._processor = None
-        self._model = None
+        self._model = None # 构造时不立即加载模型
         self._torch = None
 
     def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
@@ -61,9 +61,9 @@ class HuggingFaceQwen3VlBackend:
             ) from error
         with Image.open(image_path) as source_image:
             image = source_image.convert("RGB").resize(
-                (workload.input_size.width, workload.input_size.height)
+                (workload.input_size.width, workload.input_size.height) # 预处理图片，转换成RGB并缩放至指定长×宽
             )
-        messages = [
+        messages = [ # 遵循 Chat API 组织多模态消息（包含 system 角色、图片和文本 user 提示词）
             {"role": "system", "content": workload.system_prompt},
             {
                 "role": "user",
@@ -72,13 +72,13 @@ class HuggingFaceQwen3VlBackend:
                     {"type": "text", "text": workload.user_prompt},
                 ],
             },
-        ]
+        ] 
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=True,
             return_dict=True,
-            return_tensors="pt",
+            return_tensors="pt", # 张量字典
         )
         inputs.pop("token_type_ids", None)
         if hasattr(inputs, "to") and hasattr(self._model, "device"):
@@ -88,7 +88,7 @@ class HuggingFaceQwen3VlBackend:
         if self._torch.cuda.is_available():
             self._torch.cuda.reset_peak_memory_stats()
         generate_start = time.perf_counter()
-        with self._torch.inference_mode():
+        with self._torch.inference_mode(): # 纯推理，不计算梯度也不保存反向传播状态
             generated_ids = self._model.generate(
                 **inputs,
                 max_new_tokens=workload.generation.max_new_tokens,
@@ -96,10 +96,10 @@ class HuggingFaceQwen3VlBackend:
             )
         model_generate_ms = (time.perf_counter() - generate_start) * 1000.0
         generated_ids_trimmed = [
-            output_ids[len(input_ids) :]
+            output_ids[len(input_ids) :] # 清除输入prompt对应token
             for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
         ]
-        output_text = self._processor.batch_decode(
+        output_text = self._processor.batch_decode( # 由token得到文字
             generated_ids_trimmed,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
@@ -146,7 +146,7 @@ class HuggingFaceQwen3VlBackend:
 
 
 def _require_cuda_architecture(torch_module: Any) -> None:
-    """Reject CUDA wheels that cannot execute kernels on the detected GPU."""
+    """拒绝无法在已检测 GPU 上执行 kernel 的 CUDA wheel。"""
     if not torch_module.cuda.is_available():
         return
     major, minor = torch_module.cuda.get_device_capability()
@@ -162,7 +162,7 @@ def _require_cuda_architecture(torch_module: Any) -> None:
 
 
 class TransformersRuntime(RiskRuntime):
-    """Adapter that records executions from a Transformers backend."""
+    """记录 Transformers 后端执行事实的 Adapter。"""
 
     def __init__(
         self,

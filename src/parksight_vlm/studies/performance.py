@@ -1,4 +1,4 @@
-"""Latency, throughput, memory, power, and temperature aggregation."""
+"""时延、吞吐、内存、功耗和温度汇总。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .model import PerformanceMetrics, PercentileSummary
 
 
 def compute_performance_metrics(records: Sequence[InferenceRecord]) -> PerformanceMetrics:
-    """Aggregate only successful executions; failures remain in failure_summary."""
+    """仅汇总成功执行；失败记录保留在 failure_summary 中。"""
     successful_records = [record for record in records if record.succeeded]
     stage_values: dict[str, list[float]] = {}
     for record in successful_records:
