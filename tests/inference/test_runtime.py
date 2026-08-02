@@ -20,7 +20,10 @@ from parksight_vlm.inference import (
     StageTimings,
     TransformersRuntime,
 )
-from parksight_vlm.inference.transformers import _require_cuda_architecture
+from parksight_vlm.inference.transformers import (
+    _build_chat_messages,
+    _require_cuda_architecture,
+)
 from parksight_vlm.workload import FrozenWorkload
 
 
@@ -36,7 +39,7 @@ class StaticBackend:
         self.generation = generation
         self.calls: list[Path] = []
 
-    def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
+    def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration: # 与TransformersRuntime定义一致
         self.calls.append(image_path)
         if isinstance(self.generation, Exception):
             raise self.generation
@@ -44,6 +47,21 @@ class StaticBackend:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_qwen3_vl_messages_use_typed_content_items(self) -> None:
+        image = object()
+
+        messages = _build_chat_messages(image=image, workload=WORKLOAD)
+
+        self.assertEqual(
+            messages[0],
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": WORKLOAD.system_prompt}],
+            },
+        )
+        self.assertIs(messages[1]["content"][0]["image"], image)
+        self.assertEqual(messages[1]["content"][1]["type"], "text")
+
     def test_transformers_backend_rejects_incompatible_cuda_wheel(self) -> None:
         class FakeCuda:
             @staticmethod

@@ -63,16 +63,7 @@ class HuggingFaceQwen3VlBackend:
             image = source_image.convert("RGB").resize(
                 (workload.input_size.width, workload.input_size.height) # 预处理图片，转换成RGB并缩放至指定长×宽
             )
-        messages = [ # 遵循 Chat API 组织多模态消息（包含 system 角色、图片和文本 user 提示词）
-            {"role": "system", "content": workload.system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": workload.user_prompt},
-                ],
-            },
-        ] 
+        messages = _build_chat_messages(image=image, workload=workload)
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -143,6 +134,23 @@ class HuggingFaceQwen3VlBackend:
             attn_implementation=self._attn_implementation,
         )
         self._model.eval()
+
+
+def _build_chat_messages(*, image: Any, workload: FrozenWorkload) -> list[dict[str, Any]]:
+    """按 Qwen3-VL Processor 要求构造统一的多模态 content 列表。"""
+    return [
+        {
+            "role": "system",
+            "content": [{"type": "text", "text": workload.system_prompt}],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": workload.user_prompt},
+            ],
+        },
+    ]
 
 
 def _require_cuda_architecture(torch_module: Any) -> None:
