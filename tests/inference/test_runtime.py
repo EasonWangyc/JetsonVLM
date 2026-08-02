@@ -61,6 +61,10 @@ class RuntimeTests(unittest.TestCase):
         )
         self.assertIs(messages[1]["content"][0]["image"], image)
         self.assertEqual(messages[1]["content"][1]["type"], "text")
+        self.assertEqual(
+            messages[1]["content"][1]["text"],
+            WORKLOAD.render_user_prompt(),
+        )
 
     def test_transformers_backend_rejects_incompatible_cuda_wheel(self) -> None:
         class FakeCuda:

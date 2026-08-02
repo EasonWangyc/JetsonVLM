@@ -147,7 +147,7 @@ def _build_chat_messages(*, image: Any, workload: FrozenWorkload) -> list[dict[s
             "role": "user",
             "content": [
                 {"type": "image", "image": image},
-                {"type": "text", "text": workload.user_prompt},
+                {"type": "text", "text": workload.render_user_prompt()},
             ],
         },
     ]

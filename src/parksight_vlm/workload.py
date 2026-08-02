@@ -133,6 +133,32 @@ class FrozenWorkload:
             "driver_advice": [advice.value for advice in self.driver_advice],
         }
 
+    def render_user_prompt(self) -> str:
+        """渲染包含完整枚举和数组类型的实际用户提示词。"""
+        risk_events = json.dumps(
+            [event.value for event in self.risk_events],
+            ensure_ascii=False,
+        )
+        driver_advice = json.dumps(
+            [advice.value for advice in self.driver_advice],
+            ensure_ascii=False,
+        )
+        return "\n".join(
+            (
+                self.user_prompt,
+                "严格输出约束：",
+                f'- schema_version 必须是 "{self.schema_version}"。',
+                '- risk_level 必须是 "low"、"medium" 或 "high"。',
+                "- events 必须是 JSON 数组；可以为空；数组元素只能从以下值选择："
+                f"{risk_events}。",
+                "- evidence 必须是 JSON 字符串数组；至少包含一条简短、可见的图像证据。",
+                "- driver_advice 必须是非空 JSON 数组；数组元素只能从以下值选择："
+                f"{driver_advice}。",
+                "即使 events、evidence 或 driver_advice 只有一个元素，也必须使用 JSON 数组。",
+                "不得创造新的枚举值，不得把数组字段输出为普通字符串。",
+            )
+        )
+
     @property
     def fingerprint(self) -> str:
         """返回用于报告溯源的稳定 SHA-256 摘要。"""

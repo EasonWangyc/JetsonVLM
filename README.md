@@ -61,10 +61,18 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 项目不会在导入或测试时下载模型、启动 GPU 任务或构建 engine。模型操作通过显式命令
 进入，并保留输入、输出、日志和结果状态。
 
-完整架构见 [docs/architecture.md](docs/architecture.md)，操作入口见
-[docs/operations.md](docs/operations.md)，当前实现与待实测边界见
-[docs/status.md](docs/status.md)，评测口径见
-[docs/evaluation.md](docs/evaluation.md)，领域术语见 [CONTEXT.md](CONTEXT.md)，
-数据 JSONL 约定见 [docs/data.md](docs/data.md)，当前环境、模型缓存、执行命令和
-下一阶段见 [docs/progress.md](docs/progress.md)，从项目开始至今的命令、结果与
-证据见 [docs/execution-report.md](docs/execution-report.md)。
+完整架构见 [docs/architecture.md](docs/architecture.md)
+
+操作入口见[docs/operations.md](docs/operations.md)
+
+当前实现与待实测边界见[docs/status.md](docs/status.md)
+
+评测口径见[docs/evaluation.md](docs/evaluation.md)
+
+领域术语见 [CONTEXT.md](CONTEXT.md)，
+
+数据 JSONL 约定见 [docs/data.md](docs/data.md)
+
+当前环境、模型缓存、执行命令和下一阶段见 [docs/progress.md](docs/progress.md)
+
+从项目开始至今的命令、结果与证据见 [docs/execution-report.md](docs/execution-report.md)。

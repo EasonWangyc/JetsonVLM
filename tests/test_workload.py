@@ -19,6 +19,21 @@ WORKLOAD_PATH = (
 
 
 class FrozenWorkloadTests(unittest.TestCase):
+    def test_rendered_user_prompt_contains_strict_json_contract(self) -> None:
+        workload = FrozenWorkload.load(WORKLOAD_PATH)
+
+        rendered_prompt = workload.render_user_prompt()
+
+        self.assertIn(workload.user_prompt, rendered_prompt)
+        self.assertIn("events 必须是 JSON 数组", rendered_prompt)
+        self.assertIn("evidence 必须是 JSON 字符串数组", rendered_prompt)
+        self.assertIn("driver_advice 必须是非空 JSON 数组", rendered_prompt)
+        self.assertIn("禁止翻译、改写或扩写为自然语言", rendered_prompt)
+        for event in ParkingRiskEvent:
+            self.assertIn(f'"{event.value}"', rendered_prompt)
+        for advice in DriverAdvice:
+            self.assertIn(f'"{advice.value}"', rendered_prompt)
+
     def test_loads_frozen_workload_and_builds_stable_identity(self) -> None:
         workload = FrozenWorkload.load(WORKLOAD_PATH)
 
