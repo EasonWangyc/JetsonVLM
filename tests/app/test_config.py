@@ -49,6 +49,12 @@ class AppTests(unittest.TestCase):
         edge_config = AppStudyConfig.load(
             PROJECT_ROOT / "configs" / "studies" / "edgellm_fp16.json"
         )
+        edge_ps20_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "jetson_edgellm_fp16_ps20_pilot.json"
+        )
 
         self.assertEqual(transformers_config.runtime.backend, "transformers")
         self.assertEqual(
@@ -64,6 +70,26 @@ class AppTests(unittest.TestCase):
         )
         self.assertEqual(edge_config.runtime.backend, "tensorrt_edge_llm_http")
         self.assertEqual(edge_config.study.workload.identity, WORKLOAD.identity)
+        self.assertEqual(
+            edge_config.runtime.backend_revision,
+            "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+        )
+        self.assertEqual(edge_config.runtime.adapter_revision, "edge-http-v2")
+        self.assertEqual(edge_config.study.power_mode, "15W_MODE_0")
+        self.assertEqual(
+            edge_ps20_config.runtime.backend_revision,
+            "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+        )
+        self.assertEqual(edge_ps20_config.runtime.precision, "fp16")
+        self.assertEqual(edge_ps20_config.study.power_mode, "15W_MODE_0")
+        self.assertEqual(
+            edge_ps20_config.manifest_path.name,
+            "ps20_pilot_v1.jsonl",
+        )
+        self.assertEqual(
+            edge_ps20_config.annotations_path.name,
+            "ps20_pilot_v1.jsonl",
+        )
 
     def test_build_runtime_rejects_unknown_options(self) -> None:
         config = RuntimeConfig(

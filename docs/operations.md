@@ -39,8 +39,9 @@ TensorRT Edge-LLM HTTP Adapter 使用实验性 OpenAI-compatible server：
 PYTHONPATH=src python3 -m parksight_vlm.app.analyze_image \
   --image data/raw/example.jpg \
   --runtime tensorrt_edge_llm_http \
-  --backend-revision REPLACE_WITH_EDGE_LLM_COMMIT \
+  --backend-revision 7f061f21f0a581ba234a1e233c9315b89d8e47d6 \
   --model-revision 89644892e4d85e24eaac8bacfd4f463576704203 \
+  --adapter-revision edge-http-v2 \
   --precision fp16 \
   --edge-url http://127.0.0.1:8000
 ```
@@ -61,6 +62,7 @@ TensorRT Edge-LLM revision 为准。
 | `configs/studies/transformers_base.json` | GPU 服务器 | 已提供，作为正确性参考 |
 | `configs/studies/jetson_transformers_fp16.json` | Jetson | 已提供，作为板端 Transformers FP16 基线 |
 | `configs/studies/edgellm_fp16.json` | Jetson | 已提供，作为 TensorRT Edge-LLM FP16 基线 |
+| `configs/studies/jetson_edgellm_fp16_ps20_pilot.json` | Jetson | 与 PS2.0 Transformers FP16 基线同口径比较 |
 
 服务器正确性参考：
 
@@ -91,8 +93,15 @@ PYTHONPATH=src python3 -m parksight_vlm.app.run_study \
 
 ## 4. LoRA、合并、导出与 engine 构建
 
-`configs/flows/*.example.json` 是待审核模板。先复制为不带 `.example` 的实际配置，
-填入当前环境中已确认的命令、输入和输出，再做 dry-run：
+`configs/flows/*.example.json` 是 LoRA 等后续阶段的待审核模板。首个 Qwen3-VL
+FP16 部署已经提供两个固定配置：
+
+- `configs/flows/export_qwen3_vl_2b_fp16.json`
+- `configs/flows/build_qwen3_vl_2b_fp16_engines.json`
+
+完整服务器导出、传输、Jetson runtime 编译、engine 构建、server 和验收命令见
+[`edgellm-deployment.md`](edgellm-deployment.md)。其他阶段先复制模板为不带
+`.example` 的实际配置，填入当前环境中已确认的命令、输入和输出，再做 dry-run：
 
 ```bash
 PYTHONPATH=src python3 scripts/train_lora.py \

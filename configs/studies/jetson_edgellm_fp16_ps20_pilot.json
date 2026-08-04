@@ -1,10 +1,10 @@
 {
-  "study_id": "edgellm_fp16",
+  "study_id": "jetson_edgellm_fp16_ps20_pilot",
   "workload_path": "../workloads/parking_risk_v1.json",
-  "manifest_path": "../../data/manifests/parking_risk_v1.jsonl",
-  "annotations_path": "../../data/annotations/parking_risk_v1.jsonl",
+  "manifest_path": "../../data/manifests/ps20_pilot_v1.jsonl",
+  "annotations_path": "../../data/annotations/ps20_pilot_v1.jsonl",
   "data_root": "../../data",
-  "output_path": "../../reports/edgellm_fp16.json",
+  "output_path": "../../reports/jetson_edgellm_fp16_ps20_pilot.json",
   "split": "test",
   "repetitions": 1,
   "power_mode": "15W_MODE_0",
@@ -18,7 +18,7 @@
     "options": {
       "base_url": "http://127.0.0.1:8000",
       "model_name": "local",
-      "timeout_seconds": 120
+      "timeout_seconds": 180
     }
   }
 }

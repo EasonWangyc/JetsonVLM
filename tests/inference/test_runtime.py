@@ -199,7 +199,10 @@ class RuntimeTests(unittest.TestCase):
         request = mocked_urlopen.call_args.args[0]
         request_payload = json.loads(request.data.decode("utf-8"))
         image_item = request_payload["messages"][1]["content"][0]
+        text_item = request_payload["messages"][1]["content"][1]
         self.assertEqual(image_item["type"], "image")
+        self.assertEqual(text_item["type"], "text")
+        self.assertEqual(text_item["text"], WORKLOAD.render_user_prompt())
         self.assertEqual(generation.output_tokens, 19)
         self.assertEqual(json.loads(generation.raw_output), self_payload)
 

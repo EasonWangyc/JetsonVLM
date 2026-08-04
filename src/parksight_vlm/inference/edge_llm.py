@@ -42,7 +42,7 @@ class EdgeLlmHttpBackend:
                     "role": "user",
                     "content": [
                         {"type": "image", "image": str(image_path)},
-                        {"type": "text", "text": workload.user_prompt},
+                        {"type": "text", "text": workload.render_user_prompt()},
                     ],
                 },
             ],

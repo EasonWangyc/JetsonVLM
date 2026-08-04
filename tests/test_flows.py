@@ -27,6 +27,53 @@ class ExternalFlowPlanTests(unittest.TestCase):
                 self.assertEqual(len(first.identity), 64)
                 self.assertFalse(first.readiness_mapping()["ready"])
 
+    def test_loads_pinned_qwen3_vl_fp16_deployment_flows(self) -> None:
+        expected = {
+            "export_qwen3_vl_2b_fp16.json": "export_model",
+            "build_qwen3_vl_2b_fp16_engines.json": "build_engine",
+        }
+
+        for filename, stage in expected.items():
+            with self.subTest(filename=filename):
+                plan = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT / "configs" / "flows" / filename
+                )
+                serialized_command = " ".join(plan.command)
+                self.assertEqual(plan.stage, stage)
+                self.assertNotIn("replace-with-", serialized_command)
+                self.assertIn("qwen3_vl_2b_fp16", serialized_command.lower())
+
+        build_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_fp16_engines.json"
+        )
+        self.assertIn(
+            "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+            build_plan.command,
+        )
+        export_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "export_qwen3_vl_2b_fp16.json"
+        )
+        export_outputs = {path.as_posix() for path in export_plan.expected_outputs}
+        build_outputs = {path.as_posix() for path in build_plan.expected_outputs}
+        self.assertTrue(
+            any(path.endswith("/llm/tokenizer.json") for path in export_outputs)
+        )
+        self.assertTrue(
+            any(path.endswith("/visual/config.json") for path in export_outputs)
+        )
+        self.assertTrue(
+            any(path.endswith("/llm/tokenizer.json") for path in build_outputs)
+        )
+        self.assertTrue(
+            any(path.endswith("/visual/config.json") for path in build_outputs)
+        )
+
     def test_rejects_unknown_fields_and_unsafe_path_overlap(self) -> None:
         valid = {
             "flow_id": "flow",
