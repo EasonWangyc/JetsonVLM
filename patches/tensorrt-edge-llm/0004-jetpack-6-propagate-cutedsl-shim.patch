@@ -1,0 +1,29 @@
+diff --git a/cmake/CuteDsl.cmake b/cmake/CuteDsl.cmake
+--- a/cmake/CuteDsl.cmake
++++ b/cmake/CuteDsl.cmake
+@@ -1043,19 +1043,23 @@ function(cute_dsl_setup)
+   foreach(_tgt ${ARG_LINK_TARGETS})
+     get_target_property(_tgt_type ${_tgt} TYPE)
+     if(_tgt_type STREQUAL "STATIC_LIBRARY")
+-      target_link_libraries(${_tgt} PUBLIC ${_link_libs})
++      target_link_libraries(${_tgt} PUBLIC ${_link_libs} trt_edgellm_cutedsl_cudart_shim)
+     else()
+       target_link_libraries(${_tgt} PRIVATE ${_link_libs}
+                                             trt_edgellm_cutedsl_cudart_shim)
+     endif()
+     if(CUDA_DRIVER_LIB AND NOT CUDA_DRIVER_LIB MATCHES "-NOTFOUND$")
+       target_link_libraries(${_tgt} PRIVATE "${CUDA_DRIVER_LIB}")
+     endif()
+     # CUDA 12.0–12.6: wrap _cudaLaunchKernelEx (cudaKernel_t → CUfunction, e.g.
+     # JetPack 6). CUDA 11.x artifacts use CUmodule ABI instead.
+     if(NOT _cute_dsl_cuda_ver STREQUAL ""
+        AND _cute_dsl_cuda_ver VERSION_GREATER_EQUAL 12.0
+        AND _cute_dsl_cuda_ver VERSION_LESS 12.8)
+-      target_link_options(${_tgt} PRIVATE "-Wl,--wrap=_cudaLaunchKernelEx")
++      if(_tgt_type STREQUAL "STATIC_LIBRARY")
++        target_link_options(${_tgt} INTERFACE "-Wl,--wrap=_cudaLaunchKernelEx")
++      else()
++        target_link_options(${_tgt} PRIVATE "-Wl,--wrap=_cudaLaunchKernelEx")
++      endif()
+     endif()
+   endforeach()

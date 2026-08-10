@@ -1,6 +1,6 @@
 # ParkSight-VLM 项目执行报告
 
-更新时间：2026-07-28
+更新时间：2026-08-10
 
 ## 1. 报告说明
 
@@ -22,7 +22,7 @@
 ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 ```
 
-当前已经完成：
+截至 2026-08-10 已经完成：
 
 - 泊车风险严格 JSON 领域对象、数据目录、冻结 workload 和来源组划分约束；
 - Transformers 和 TensorRT Edge-LLM HTTP Runtime Adapter；
@@ -32,20 +32,26 @@ ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 - `Qwen/Qwen3-VL-2B-Instruct` 指定 commit 的板端缓存和完整性校验；
 - Jetson 专用 Python 3.10、PyTorch 2.9.1、torchvision 0.24.1 环境；
 - `sm_87` CUDA kernel 验证；
-- 一张真实泊车图片的多次 FP16 smoke test 及失败证据。
+- 一张真实泊车图片的多次 Transformers FP16 smoke test 及失败证据；
+- 服务器侧固定 revision 的 LLM 与视觉 ONNX 导出；
+- Jetson 侧固定 commit 的 TensorRT Edge-LLM 编译；
+- Jetson 侧 LLM/visual FP16 engine 构建；
+- Edge-LLM 双 engine HTTP 服务、真实单图和冻结 20 样本同机评测；
+- 20 样本端到端时延以及 RAM、swap、GPU、功耗和温度派生摘要。
 
-尚未完成：
+尚未完成或未通过质量门槛：
 
-- Qwen3-VL-2B 在当前板端成功生成严格 JSON；
-- 冻结数据集、人工标注和完整 `StudyReport`；
+- Qwen3-VL-2B 在当前板端生成通过严格 schema 的 JSON；
 - 服务器 Transformers 正确性参考；
-- TensorRT Edge-LLM engine 构建与板端推理；
+- Jetson Transformers FP16 在同一 20 样本上的成功 StudyReport；
 - LoRA 训练、合并复测和 INT4 对比。
 
-当前阻塞不是 Python 接口、模型 revision 或 CUDA 架构不匹配，而是 L4T R36.4.7
-运行期间出现的 `NvMapMemAllocInternalTagged ... error 12`。run5 关闭 PyTorch
-caching allocator 后仍然失败。NVIDIA 论坛将同型问题列为 r36.4.7 已知问题，并说明
-在 r36.5 修复：
+历史 Transformers 阻塞来自 L4T R36.4.7 期间的
+`NvMapMemAllocInternalTagged ... error 12`；系统已升级到 R36.5.0。当前 Edge-LLM
+部署链路已经运行，新的业务质量问题是 20/20 输出未通过严格 schema，而不是 engine
+无法加载。
+
+历史排查参考：
 
 - <https://forums.developer.nvidia.com/t/intermittent-nvmapmemalloc-error-12-and-cuda-allocator-crash-during-pytorch-inference-on-jetson-orin-nano/349752>
 - <https://forums.developer.nvidia.com/t/jetson-inference/365149/7>
@@ -880,14 +886,14 @@ R36.4.7 的同型已知问题，当前不能据此得出“Qwen3-VL-2B FP16 必�
 run3–run5 原始证据已复制到本机 `reports/smoke/`。该目录由 `.gitignore` 忽略，
 不会因普通 commit 进入仓库。
 
-## 15. 当前应做的下一步
+## 15. 2026-07-28 当时的下一步
 
 ### 15.1 建议
 
 先备份板端关键环境，再将 L4T 从 R36.4.7 升级到包含 r36.5 的 JetPack 6.2.2，
 重启后重复完全相同的 `sm_87` 验证和 run5。
 
-系统升级和重启尚未执行。升级前需要单独确认：
+以下为当时的升级前检查项；升级与重启后来已经完成，结果见第 19 节：
 
 - 当前启动介质和 JetPack 安装方式；
 - NVIDIA apt source；
@@ -913,16 +919,14 @@ run3–run5 原始证据已复制到本机 `reports/smoke/`。该目录由 `.git
 
 ```text
 服务器 Qwen3-VL Transformers 正确性参考
-冻结泊车数据集下载/整理
-人工 reference assessment
 完整 Jetson Transformers StudyReport
-TensorRT Edge-LLM 模型导出
-TensorRT Edge-LLM engine build
-Jetson TensorRT Edge-LLM 推理
 LoRA 训练和合并
 INT4 LLM backbone
 FP16/INT4 同机性能与质量对比
 ```
+
+TensorRT Edge-LLM 模型导出已于 2026-08-04 完成，实际证据见第 18 节；Jetson engine
+构建与真实推理已于 2026-08-10 完成，见第 19–20 节。
 
 ## 17. 后续命令协作约定
 
@@ -937,3 +941,360 @@ FP16/INT4 同机性能与质量对比
 
 除非用户在当前请求明确要求 Codex 代执行，否则 Codex 不再直接 SSH、安装依赖、
 下载模型、运行 GPU 任务、升级系统或执行 Git commit/push。
+
+## 18. TensorRT Edge-LLM 服务器 ONNX 导出（2026-08-04）
+
+### 18.1 固定身份与环境
+
+| 项目 | 实测值 |
+| --- | --- |
+| 服务器系统 | Ubuntu 22.04.5 LTS，x86-64 |
+| GPU | NVIDIA GeForce RTX 4090 D，24 GiB |
+| 驱动 / `nvidia-smi` CUDA | 595.71.05 / 13.2 |
+| 导出 Python | 3.12.3，独立 `.venv-export` |
+| PyTorch | `2.12.0+cu126`，CUDA 可用 |
+| TensorRT Edge-LLM | `0.9.1`，commit `7f061f21f0a581ba234a1e233c9315b89d8e47d6` |
+| Transformers / ONNX / ONNX Script | `5.9.0` / `1.19.0` / `0.7.0` |
+| 模型 revision | `89644892e4d85e24eaac8bacfd4f463576704203` |
+
+服务器没有系统 `nvcc`，但固定 PyTorch CUDA 12.6 runtime 的 FP16 matrix smoke test
+通过，TensorRT Edge-LLM 的 Python ONNX 导出不依赖本次服务器 C++ 编译。
+
+### 18.2 模型与流程输入校验
+
+镜像下载后的单文件权重实际信息为：
+
+```text
+model.safetensors bytes  = 4255140312
+model.safetensors sha256 = 7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0
+```
+
+该 revision 发布单个 `model.safetensors`，不发布
+`model.safetensors.index.json`。因此导出 flow 的 `required_inputs` 已改为实际单文件
+权重，并增加回归断言，防止配置再次要求不存在的 index 文件。
+
+### 18.3 执行命令与结果
+
+在服务器 `JetsonVLM` 仓库执行：
+
+```bash
+export PYTHONPATH=/root/autodl-tmp/JetsonVLM/src
+export PATH=/root/autodl-tmp/TensorRT-Edge-LLM/.venv-export/bin:$PATH
+
+python scripts/export_model.py \
+  --config configs/flows/export_qwen3_vl_2b_fp16.json
+
+python scripts/export_model.py \
+  --config configs/flows/export_qwen3_vl_2b_fp16.json \
+  --execute
+```
+
+dry-run 返回 `ready: true`、`missing_inputs: []`、`preexisting_outputs: []`。
+实际执行从 `2026-08-04T15:12:59.286487+00:00` 到
+`2026-08-04T15:15:14.059600+00:00`，退出码为 0，record 状态为
+`succeeded`。LLM 与视觉编码器的全部声明输出均为 `true`，ONNX 目录约 4.6 GiB。
+
+本机保存的证据为：
+
+```text
+reports/flows/export_qwen3_vl_2b_fp16.json
+reports/flows/export_qwen3_vl_2b_fp16.log
+artifacts/transfers/qwen3_vl_2b_fp16_export_89644892.tar
+```
+
+归档长度为 `4890972160` 字节，服务器与本机合并归档的 SHA-256 均为：
+
+```text
+7e00cd92099ff9f35ed600e68682630b70c87cc58e1311874a15002d63fc4e45
+```
+
+归档内 11 个 ONNX 与 sidecar 文件的独立 SHA-256 已全部复算为 `OK`。该证据只证明
+x86 服务器导出成功；Jetson runtime 编译、engine 构建和推理仍需在目标板端验证。
+
+## 19. Jetson TensorRT Edge-LLM 编译与 engine 构建（2026-08-10）
+
+### 19.1 板端环境与 ONNX 交接
+
+板端已升级并实测为 L4T R36.5.0、JetPack 6.2.2、CUDA 12.6、TensorRT 10.3。
+服务器导出的归档在板端解包后，11 个文件的 SHA-256 全部通过；归档身份仍为：
+
+```text
+qwen3_vl_2b_fp16_export_89644892.tar
+bytes  = 4890972160
+sha256 = 7e00cd92099ff9f35ed600e68682630b70c87cc58e1311874a15002d63fc4e45
+```
+
+Jetson Python 环境为 `.venv-jetson` / Python 3.10.12，PyTorch 2.9.1、Transformers
+4.57.6、Accelerate 1.12.0。cuDSS 动态库已随虚拟环境存在，但启动 Python 时需要将
+其目录放入 `LD_LIBRARY_PATH`；设置后 `torch.cuda.is_available()` 为 `True`，arch
+list 为 `['sm_87']`：
+
+```bash
+export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:$LD_LIBRARY_PATH
+```
+
+### 19.2 固定源码编译
+
+TensorRT Edge-LLM 固定为 `v0.9.1` commit
+`7f061f21f0a581ba234a1e233c9315b89d8e47d6`。板端离线补齐 NVTX、googletest 与
+nlohmann/json 子模块，使用项目 `.venv-jetson` 中的 CMake 3.31.6 和 pybind11 2.13.6
+完成编译。最终验证存在：
+
+```text
+build/libNvInfer_edgellm_plugin.so
+build/examples/llm/llm_build
+build/examples/llm/llm_inference
+build/examples/multimodal/visual_build
+build/pybind/_edgellm_runtime.cpython-310-aarch64-linux-gnu.so
+```
+
+`ldd` 未发现缺失依赖，`_edgellm_runtime.LLMRuntime` 和
+`experimental.server.engine.LLM` 均可导入。为兼容 JetPack 6.2.2 / TensorRT 10.3，
+仓库保存了 `patches/tensorrt-edge-llm/` 下的显式补丁，不修改上游固定 commit 身份。
+
+### 19.3 FMHA CUBIN 调查
+
+LLM ONNX 第一个 `AttentionPlugin` 最初因 `CUDA_ERROR_INVALID_IMAGE` 创建失败。逐条
+验证 11 个 SM87 FMHA CUBIN 后，9 个可加载，只有两个 `head_size=256 + custom_mask`
+资产被 CUDA 驱动拒绝；目标 Qwen3-VL-2B 配置为 `head_size=128`。插件补丁仅在驱动
+明确返回 `INVALID_IMAGE` 时记录警告并跳过该资产，随后 32 层 AttentionPlugin 均能
+创建，ONNX 解析和 TensorRT 图优化可继续。
+
+### 19.4 LLM 构建期内存证据
+
+已归档六次失败 record/log，文件名从
+`build_qwen3_vl_2b_fp16_engines.attempt1_*.{json,log}` 到
+`attempt6_weight_streaming_oom.{json,log}`。依次排除了插件路径、CUBIN、默认优化级别、
+workspace 和 weight streaming 开关问题。内核记录显示 `llm_build` 在 8 GiB 统一内存
+和约 3.7 GiB zram 用尽后被 OOM killer 终止；另一次 TensorRT 明确记录额外
+`3441150208` 字节分配失败。
+
+为降低搜索峰值，独立 LLM flow 固定：
+
+```text
+maxBatchSize              = 1
+maxInputLen               = 1024
+maxKVCacheCapacity        = 2048
+workspace limit           = 1024 MiB
+builder optimization      = 0
+weight streaming          = enabled
+```
+
+板端已创建但尚未启用 `/home/ubuntu/parksight-build.swap`，大小 8 GiB、权限 0600，
+swap UUID 为 `ef2f7643-de66-4127-8c11-f7f3d2574e17`。启用需要用户在板端输入 sudo
+密码：
+
+```bash
+sudo swapon --priority 1 /home/ubuntu/parksight-build.swap
+swapon --show
+free -h
+```
+
+### 19.5 视觉 engine 成功证据
+
+为避免 LLM OOM 覆盖视觉阶段，构建入口已支持 `--component llm|visual|both`，并增加
+两个独立 flow。视觉 flow
+`configs/flows/build_qwen3_vl_2b_fp16_visual_engine.json` 实际执行成功：
+
+```text
+plan_identity = 769d2168534bfcbed1cf34c673fabdbe5d0b3314193059251306255412c78793
+status        = succeeded
+build time    = 33.991 s
+TRT GPU peak  = 789 MiB
+TRT CPU peak  = 4417 MiB
+```
+
+输出证据：
+
+```text
+artifacts/engines/qwen3_vl_2b_fp16/visual/visual.engine
+bytes  = 824000540
+sha256 = 3c6b4cce682e021b09c066d0e325335e31ef9edbf613c754be586035c26f5c2f
+
+reports/flows/build_qwen3_vl_2b_fp16_visual_engine.json
+reports/flows/build_qwen3_vl_2b_fp16_visual_engine.log
+```
+
+截至第 19.5 节记录时，该证据只证明视觉 engine 构建；随后完成的 LLM engine、双
+engine 加载、真实单图和 20 样本结果见第 20 节。
+
+## 20. Jetson FP16 engine 与真实推理验收（2026-08-10）
+
+### 20.1 临时 swap 与 LLM engine
+
+`/home/ubuntu/parksight-build.swap` 已实际启用。重复执行 `swapon` 时出现：
+
+```text
+insecure file owner 1000, 0 (root) suggested
+swapon failed: Device or resource busy
+```
+
+`/proc/swaps` 和 `swapon --show` 证明该 8 GiB 文件已经处于 active 状态；第二行表示
+重复启用，不是 swap 失效。文件未写入 `/etc/fstab`。
+
+随后执行独立 LLM flow：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine.json \
+  --execute
+```
+
+结果：
+
+```text
+flow_id       = build_qwen3_vl_2b_fp16_llm_7f061f21
+plan_identity = d3266941b1ed48b75a09a3ef13971e668089f69ee975b6adda049fcf642f2314
+status        = succeeded
+started_at    = 2026-08-10T00:36:48.769548+00:00
+finished_at   = 2026-08-10T00:40:37.732676+00:00
+```
+
+输出：
+
+```text
+artifacts/engines/qwen3_vl_2b_fp16/llm/llm.engine
+bytes  = 3453798316
+sha256 = cbdf0300bf406dfbbcd06d47435c699c26403139d6bdd06b473ba00576583013
+```
+
+### 20.2 运行时 weight streaming 补丁
+
+第一次启动服务时，默认相对插件路径落到了 ParkSight 工作目录，导致
+`AttentionPlugin` 未注册。显式设置绝对 `EDGELLM_PLUGIN_PATH` 后，engine 能完成
+反序列化，但 TensorRT 默认关闭 weight streaming，并尝试一次性分配
+`3441150208` 字节 GPU 权重，随后 OOM。
+
+项目因此增加
+`patches/tensorrt-edge-llm/0009-configurable-runtime-weight-streaming-budget.patch`，
+在创建 `IExecutionContext` 前读取
+`EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES` 并调用
+`ICudaEngine::setWeightStreamingBudgetV2()`。板端单线程增量编译：
+
+```bash
+cd /home/ubuntu/TensorRT-Edge-LLM
+/home/ubuntu/JetsonVLM/.venv-jetson/bin/cmake --build build \
+  --target _edgellm_runtime --parallel 1
+```
+
+启动命令的关键参数为：
+
+```bash
+export PYTHONPATH=/home/ubuntu/TensorRT-Edge-LLM:/home/ubuntu/JetsonVLM/src
+export BUILD_DIR=/home/ubuntu/TensorRT-Edge-LLM/build
+export EDGELLM_PLUGIN_PATH=/home/ubuntu/TensorRT-Edge-LLM/build/libNvInfer_edgellm_plugin.so
+export EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES=0
+export LD_LIBRARY_PATH=/home/ubuntu/JetsonVLM/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib:/home/ubuntu/TensorRT-Edge-LLM/build:/usr/local/cuda/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu
+
+cd /home/ubuntu/JetsonVLM
+.venv-jetson/bin/python scripts/serve_edgellm.py \
+  --engine-root artifacts/engines/qwen3_vl_2b_fp16 \
+  --weight-streaming-budget-bytes 0 \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+日志确认：
+
+```text
+requested=0 actual=0 streamable=3441150208 scratch=1244660224 bytes
+Base EngineExecutor successfully loaded
+Vision runner successfully initialized
+Setup shared execution context memory: 1356027904 bytes
+Successfully captured decoding CUDA graphs
+Uvicorn running on http://127.0.0.1:8000
+```
+
+`GET /health` 返回 HTTP 200 和 `status=healthy`。可选 action engine 不存在只产生信息
+日志，不影响本项目的视觉语言链路。
+
+### 20.3 真实单图
+
+执行：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.analyze_image \
+  --image data/raw/ps2.0/pilot/indoor/001.jpg \
+  --workload configs/workloads/parking_risk_v1.json \
+  --runtime tensorrt_edge_llm_http \
+  --backend-revision 7f061f21f0a581ba234a1e233c9315b89d8e47d6 \
+  --model-id Qwen/Qwen3-VL-2B-Instruct \
+  --model-revision 89644892e4d85e24eaac8bacfd4f463576704203 \
+  --adapter-revision edge-http-v2 \
+  --precision fp16 \
+  --edge-url http://127.0.0.1:8000
+```
+
+后端返回 HTTP 200、57 个 token，端到端 `38943.90 ms`。模型生成了可解析 JSON，
+但把 `events`、`evidence` 和 `driver_advice` 输出为字符串，因此严格领域解析返回：
+
+```text
+category       = json_parse_error
+message        = events must be an array
+exception_type = AssessmentValidationError
+```
+
+这证明真实视觉与生成链路已执行，但不构成业务 schema 成功。
+
+### 20.4 冻结 20 样本同机评测
+
+执行：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+tegrastats --interval 1000 \
+  > reports/runtime/jetson_edgellm_fp16_ps20_pilot.tegrastats.log &
+
+PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.run_study \
+  --config configs/studies/jetson_edgellm_fp16_ps20_pilot.json
+```
+
+服务日志记录 21 个成功 POST，其中 1 个为单图、20 个为 study。StudyReport 包含完整
+20 条记录，stderr 为空：
+
+```text
+sample_count                 = 20
+backend_completed            = 20
+strict schema valid          = 0
+failure_summary              = {"json_parse_error": 20}
+end-to-end p50/p90/p99       = 41.76/50.61/55.42 s
+aggregate output throughput  = 1.48 token/s
+```
+
+874 条 tegrastats 的派生结果：
+
+```text
+RAM peak                     = 7414 MB
+swap peak                    = 2579 MB
+GPU utilization mean        = 98.79%
+VDD_IN mean/max              = 10.11/10.76 W
+GPU temperature mean/max     = 60.67/62.50 C
+```
+
+`scripts/summarize_jetson_study.py` 从原始 StudyReport 与 tegrastats 生成派生摘要，
+明确把“后端完成”与“严格 schema 成功”分开。原始与派生证据保存在本机忽略目录：
+
+```text
+reports/jetson-runtime-20260810/
+  build_qwen3_vl_2b_fp16_llm_engine.json
+  build_qwen3_vl_2b_fp16_llm_engine.log
+  edgellm_fp16_server_run3.log
+  jetson_edgellm_fp16_ps20-indoor-001.json
+  jetson_edgellm_fp16_ps20_pilot.json
+  jetson_edgellm_fp16_ps20_pilot.tegrastats.log
+  jetson_edgellm_fp16_ps20_pilot.runtime-summary.json
+```
+
+### 20.5 LoRA 与 INT4 阶段记录
+
+当前只有 20 个冻结 `test` 样本，没有独立 `train`/`validation` 数据。LoRA 示例配置
+仍引用不存在的 `data/manifests/parking_risk_v1.jsonl` 与对应 annotation，flow command
+仍为 `replace-with-reviewed-training-command`。因此本轮没有执行训练、没有 adapter、
+没有合并模型，也没有把 test 集用于训练。
+
+INT4 当前同样只有规划，没有校准数据、量化配置、INT4 engine 或板端报告。FP16
+weight streaming 的 3.44 GB streamable weights、1.24 GB scratch、约 7.4 GB RAM 占用
+和 41.76 秒 p50 已构成后续 INT4 的客观动机，但不能代替 INT4 实测证据。

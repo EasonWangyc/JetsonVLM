@@ -1,0 +1,70 @@
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+index 56debea..88ba3b4 100644
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -21,7 +21,10 @@
+ #include "common/trtUtils.h"
+ #include "runtime/exec/registryBuilder.h"
++#include <cstdlib>
+ #include <stdexcept>
++#include <string>
+ #include <string_view>
++#include <optional>
+ 
+ namespace trt_edgellm
+ {
+@@ -55,6 +58,32 @@ bool engineHasInputTensor(nvinfer1::ICudaEngine const& engine, char const* tensor
+     }
+     return false;
+ }
++
++std::optional<int64_t> weightStreamingBudgetFromEnvironment()
++{
++    char const* const value = std::getenv("EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES");
++    if (value == nullptr)
++    {
++        return std::nullopt;
++    }
++
++    std::string const text{value};
++    size_t parsedCharacters{0};
++    int64_t budget{-1};
++    try
++    {
++        budget = std::stoll(text, &parsedCharacters);
++    }
++    catch (std::exception const&)
++    {
++        throw std::invalid_argument("EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES must be a non-negative integer");
++    }
++    if (parsedCharacters != text.size() || budget < 0)
++    {
++        throw std::invalid_argument("EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES must be a non-negative integer");
++    }
++    return budget;
++}
+ } // namespace
+ 
+ EngineExecutor::EngineExecutor(std::filesystem::path const& enginePath, TensorRegistry registry)
+@@ -67,6 +96,21 @@ EngineExecutor::EngineExecutor(std::filesystem::path const& enginePath, TensorReg
+ 
+     mEngine = deserializeCudaEngineFromFile(*mRuntime, enginePath);
+ 
++    if (auto const requestedBudget = weightStreamingBudgetFromEnvironment(); requestedBudget.has_value())
++    {
++        auto const streamableWeights = mEngine->getStreamableWeightsSize();
++        ELLM_CHECK(streamableWeights > 0,
++            "EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES was set, but the engine was not built with weight streaming");
++        ELLM_CHECK(mEngine->setWeightStreamingBudgetV2(*requestedBudget),
++            "failed to set TensorRT weight streaming budget");
++        LOG_INFO(
++            "TensorRT weight streaming budget: requested=%lld actual=%lld streamable=%lld scratch=%lld bytes",
++            static_cast<long long>(*requestedBudget),
++            static_cast<long long>(mEngine->getWeightStreamingBudgetV2()),
++            static_cast<long long>(streamableWeights),
++            static_cast<long long>(mEngine->getWeightStreamingScratchMemorySize()));
++    }
++
+     // Use USER_MANAGED allocation so context memory can be shared across runners.
+     mContext = std::unique_ptr<nvinfer1::IExecutionContext>(
+         mEngine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED));

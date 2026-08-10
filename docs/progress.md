@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-07-28
+更新时间：2026-08-10
 
 ## 1. 当前结论
 
@@ -13,13 +13,19 @@ ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 领域对象、冻结工作负载、Transformers Adapter、TensorRT Edge-LLM HTTP Adapter、
 质量与性能汇总、命令入口以及外部流程包装器已经实现，并通过无硬件单元测试。
 
-Jetson 环境已经完成连接和基础检查，指定 revision 的
-`Qwen/Qwen3-VL-2B-Instruct` 已下载到板端并完成缓存完整性校验。
+Jetson 已升级到 L4T R36.5.0 / JetPack 6.2.2。固定 revision 的模型与服务器 ONNX
+归档均已在板端复算哈希；固定 commit 的 TensorRT Edge-LLM 已编译，动态库依赖、
+Python binding 和 builder/runtime 可执行文件均通过检查。
 
-当前已执行真实单图 FP16 smoke test，但尚未成功生成模型输出。原 Python 3.12
-环境的 torch 缺少 `sm_87`；建立 Jetson Python 3.10 专用环境并验证 `sm_87` 后，
-模型加载仍因 L4T R36.4.7 的 NvMap 大块内存分配错误失败。冻结测试集研究、LoRA
-训练和 TensorRT Edge-LLM engine 构建尚未执行。
+启用临时 8 GiB 磁盘 swap 后，视觉与 LLM 两个 FP16 engine 均已在目标 Jetson 构建
+成功并形成独立 `succeeded` flow record。运行时通过
+`setWeightStreamingBudgetV2(0)` 在 8 GB 设备上同时加载两套 engine，HTTP 健康检查、
+真实单图和冻结 20 样本 study 均已执行。
+
+20/20 样本完成后端推理，但 20/20 输出因数组字段类型和领域枚举不符合严格 schema
+被记录为 `json_parse_error`。端到端 p50/p90/p99 为 41.76/50.61/55.42 秒；874 条
+`tegrastats` 显示平均板端输入功耗 10.11 W、GPU 峰值温度 62.5°C。该结果证明完整
+部署链路成立，同时形成了 LoRA 数据建设与 INT4 内存优化的明确依据。
 
 从项目开始至今的完整命令、结果与证据见
 [`execution-report.md`](execution-report.md)。
@@ -36,32 +42,35 @@ Jetson 环境已经完成连接和基础检查，指定 revision 的
 | 运行记录 | 成功结果、JSON 失败、输入失败、超时和 OOM 等失败事实 | 单元测试 |
 | 研究汇总 | 质量指标、性能分位数、资源数据、失败汇总和环境快照 | 单元测试 |
 | 应用入口 | 单图分析、配置化研究和 runtime factory | 单元测试 |
-| 外部流程 | LoRA、合并、导出和 engine 构建的 dry-run/execute 包装器 | 静态入口与校验逻辑 |
+| 外部流程 | LoRA、合并、导出和可拆分 engine 构建的 dry-run/execute 包装器 | 静态入口、服务器 ONNX record、Jetson LLM/visual engine record |
 | Jetson 准备 | SSH、系统、CUDA、Python/CUDA 依赖、功耗模式、内存和磁盘检查 | 板端命令输出 |
 | 模型准备 | 固定模型 commit、下载 12 个文件并校验权重哈希 | Hugging Face 缓存与校验结果 |
+| FP16 engine | 独立构建 LLM 与视觉 engine，保留哈希和 flow record | 两个 `succeeded` flow record |
+| FP16 runtime | 插件加载、权重流式预算、双 engine、CUDA graph 与 HTTP 服务 | server log 与 `/health` 200 |
+| 单图/20 样本 | 真实图片推理、严格 JSON 失败记录与同机遥测 | StudyReport、runtime summary、874 条 tegrastats |
 
 ## 3. Jetson 环境快照
 
 | 项目 | 当前值 |
 | --- | --- |
 | 设备 | NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super |
-| L4T | R36.4.7 |
+| L4T / JetPack | R36.5.0 / 6.2.2 |
 | CUDA Toolkit | 12.6 |
 | 功耗模式 | `15W`，mode id `0` |
-| Python 环境 | `/home/ubuntu/project/llm-on-device/.venv`，Python 3.12.12 |
-| PyTorch | `2.9.1+cu126`，`torch.cuda.is_available() == True` |
+| Python 环境 | `/home/ubuntu/JetsonVLM/.venv-jetson`，Python 3.10.12 |
+| PyTorch | `2.9.1`，CUDA 可用，arch list 为 `['sm_87']` |
 | Transformers | `4.57.6` |
 | Accelerate | `1.12.0` |
 | Pillow | `12.1.0` |
 | Hugging Face Hub CLI | `0.36.0` |
 | 系统内存 | 7.4 GiB |
-| 当前可用内存 | 5.7 GiB |
-| Swap | 3.7 GiB zram，当前实际使用约 1 MiB |
-| NVMe | 233 GiB，总剩余约 181 GiB |
+| 当前可用内存 | 空闲时约 6.8 GiB |
+| Swap | 3.7 GiB zram + 已启用的 8 GiB 临时磁盘 swap；未写入 `fstab` |
+| NVMe | 233 GiB，当前剩余约 161 GiB |
 
 `free -h` 中较小的 `free` 值主要来自 Linux 将空闲内存用于 page cache；判断是否
-存在内存压力应优先查看 `available` 和实际 swap 使用量。当前快照没有显示明显内存
-压力。zram 设备处于启用状态，但不代表系统正在大量换页。
+存在内存压力应优先查看 `available` 和实际 swap 使用量。空闲快照没有明显压力；
+LLM engine 构建时则有内核 OOM 与 TensorRT 分配失败的直接证据。
 
 ## 4. 模型版本与缓存
 
@@ -206,10 +215,38 @@ NvMap/NVML 错误文本归因。
 - run5 RAM 峰值约 4005/7620 MiB，swap 为 0，最小 lfb 为 2×4 MiB，
   `GR3D_FREQ` 为 0%；尚未进入视觉编码或生成。
 
-## 7. 下一阶段
+## 7. 当前实验结果与下一阶段
 
-1. 备份板端环境并评估升级到包含 r36.5 的 JetPack 6.2.2。
-2. 升级后重新验证 L4T、CUDA、`sm_87` 和小 tensor kernel。
-3. 使用相同模型 commit、图片、workload 和 FP16 参数执行 run6。
-4. 如果 run6 成功，再扩展冻结测试集并生成 Jetson Transformers `StudyReport`。
-5. 之后进入服务器正确性参考、LoRA 和 TensorRT Edge-LLM engine 阶段。
+### 7.1 TensorRT Edge-LLM FP16 结果
+
+| 指标 | 实测结果 |
+| --- | --- |
+| 单图后端执行 | HTTP 200，57 token，38.94 s |
+| 20 样本后端完成率 | 20/20 |
+| 严格 JSON 有效率 | 0/20 |
+| 失败类型 | `json_parse_error: 20` |
+| 端到端 p50/p90/p99 | 41.76/50.61/55.42 s |
+| 聚合端到端输出速率 | 1.48 token/s |
+| RAM / swap 峰值 | 7414/2579 MB |
+| GPU 利用率均值 | 98.79% |
+| 板端输入功耗均值 | 10.11 W |
+| GPU 峰值温度 | 62.5°C |
+
+原始证据保存在本机忽略目录 `reports/jetson-runtime-20260810/`。派生摘要由
+`scripts/summarize_jetson_study.py` 从原始 StudyReport 与 tegrastats 生成，既不修改
+原始记录，也不把 JSON 失败计为业务成功。
+
+### 7.2 LoRA 与 INT4 状态
+
+当前 20 个样本全部属于冻结 `test` 集，不能直接拿来训练。LoRA 示例配置仍引用尚未
+建立的 `parking_risk_v1.jsonl` 训练/验证数据，训练与合并命令仍为占位符，因此本轮
+没有执行 LoRA 或生成 adapter。下一步应先从独立来源组建立 train/validation 数据，
+重点监督数组字段、六类领域事件和安全建议，再在 GPU 服务器运行 LoRA 并回到同一
+冻结 test 集复测。
+
+INT4 尚无校准集、量化配置或 engine。FP16 运行已经证明 0-byte 权重驻留预算能在
+8 GB Jetson 上运行，但代价是 p50 约 41.76 秒；INT4 的首要目标是降低权重与 scratch
+压力、提高 GPU 驻留比例和 token 吞吐，而不是把尚未执行的计划写成完成结果。
+
+同机加速比还需要补齐 Jetson Transformers FP16 的同一 20 样本报告；早期 OOM 记录
+保留为明确实验结果，但不能用服务器 Transformers 延迟替代板端基线。

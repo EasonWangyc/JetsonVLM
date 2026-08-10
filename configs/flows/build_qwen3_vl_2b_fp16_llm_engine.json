@@ -1,5 +1,5 @@
 {
-  "flow_id": "build_qwen3_vl_2b_fp16_engines_7f061f21",
+  "flow_id": "build_qwen3_vl_2b_fp16_llm_7f061f21",
   "stage": "build_engine",
   "working_directory": "../..",
   "command": [
@@ -13,6 +13,8 @@
     "artifacts/onnx/qwen3_vl_2b_fp16",
     "--engine-root",
     "artifacts/engines/qwen3_vl_2b_fp16",
+    "--component",
+    "llm",
     "--max-batch-size",
     "1",
     "--max-input-len",
@@ -23,27 +25,17 @@
     "1024",
     "--builder-optimization-level",
     "0",
-    "--enable-weight-streaming",
-    "--min-image-tokens",
-    "8",
-    "--max-image-tokens",
-    "2048",
-    "--max-image-tokens-per-image",
-    "2048"
+    "--enable-weight-streaming"
   ],
   "required_inputs": [
     "../../scripts/build_edgellm_vlm_engines.py",
     "../../../TensorRT-Edge-LLM/build/examples/llm/llm_build",
-    "../../../TensorRT-Edge-LLM/build/examples/multimodal/visual_build",
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/model.onnx",
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/config.json",
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/embedding.safetensors",
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/tokenizer.json",
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/tokenizer_config.json",
-    "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/processed_chat_template.json",
-    "../../artifacts/onnx/qwen3_vl_2b_fp16/visual/model.onnx",
-    "../../artifacts/onnx/qwen3_vl_2b_fp16/visual/config.json",
-    "../../artifacts/onnx/qwen3_vl_2b_fp16/visual/preprocessor_config.json"
+    "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/processed_chat_template.json"
   ],
   "expected_outputs": [
     "../../artifacts/engines/qwen3_vl_2b_fp16/llm/llm.engine",
@@ -51,11 +43,8 @@
     "../../artifacts/engines/qwen3_vl_2b_fp16/llm/embedding.safetensors",
     "../../artifacts/engines/qwen3_vl_2b_fp16/llm/tokenizer.json",
     "../../artifacts/engines/qwen3_vl_2b_fp16/llm/tokenizer_config.json",
-    "../../artifacts/engines/qwen3_vl_2b_fp16/llm/processed_chat_template.json",
-    "../../artifacts/engines/qwen3_vl_2b_fp16/visual/visual.engine",
-    "../../artifacts/engines/qwen3_vl_2b_fp16/visual/config.json",
-    "../../artifacts/engines/qwen3_vl_2b_fp16/visual/preprocessor_config.json"
+    "../../artifacts/engines/qwen3_vl_2b_fp16/llm/processed_chat_template.json"
   ],
-  "record_path": "../../reports/flows/build_qwen3_vl_2b_fp16_engines.json",
-  "log_path": "../../reports/flows/build_qwen3_vl_2b_fp16_engines.log"
+  "record_path": "../../reports/flows/build_qwen3_vl_2b_fp16_llm_engine.json",
+  "log_path": "../../reports/flows/build_qwen3_vl_2b_fp16_llm_engine.log"
 }

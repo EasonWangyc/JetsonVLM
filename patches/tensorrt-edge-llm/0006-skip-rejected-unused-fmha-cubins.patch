@@ -1,0 +1,19 @@
+diff --git a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+index 20066ce..2da4e84 100644
+--- a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
++++ b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+@@ -230,6 +230,13 @@ public:
+             {
+                 LOG_INFO("Loading FMHA cubin: index=%d sm=%u size=%u function=%s", i, kernelMeta.mSM,
+                     kernelMeta.mCubinSize, kernelMeta.mFuncName);
+-                CUDA_DRIVER_CHECK(cuModuleLoadData(&hModule, kernelMeta.mCubin));
++                auto const loadResult = cuModuleLoadData(&hModule, kernelMeta.mCubin);
++                if (loadResult == CUDA_ERROR_INVALID_IMAGE)
++                {
++                    LOG_WARNING("Skipping FMHA cubin rejected by the CUDA driver: index=%d sm=%u size=%u function=%s",
++                        i, kernelMeta.mSM, kernelMeta.mCubinSize, kernelMeta.mFuncName);
++                    continue;
++                }
++                CUDA_DRIVER_CHECK(loadResult);
+                 mModules.insert(std::make_pair(kernelMeta.mCubin, hModule));
+             }

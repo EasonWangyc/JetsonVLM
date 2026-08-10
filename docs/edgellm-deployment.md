@@ -1,8 +1,9 @@
 # TensorRT Edge-LLM FP16 部署流程
 
 本文记录 `Qwen/Qwen3-VL-2B-Instruct` 的首个 TensorRT Edge-LLM
-板端实验流程。命令尚未执行，只有生成的 flow record、engine、单图推理记录和
-`StudyReport` 才属于部署证据。
+板端实验流程。2026-08-04 已完成固定 revision 模型的服务器 ONNX 导出，并生成
+成功的 flow record；2026-08-10 已完成 Jetson C++ runtime 编译和视觉 engine
+构建。LLM engine、单图推理和 `StudyReport` 仍需分别形成实际证据。
 
 ## 1. 固定实验身份
 
@@ -178,34 +179,52 @@ test -x build/examples/llm/llm_inference
 test -x build/examples/multimodal/visual_build
 ```
 
-## 6. Jetson：构建两个 engine
+## 6. Jetson：分别构建两个 engine
 
-先检查 flow readiness：
+LLM 与视觉 engine 使用独立 flow，避免其中一个失败时覆盖另一个阶段的证据。先构建
+视觉 engine：
 
 ```bash
 cd /home/ubuntu/JetsonVLM
 PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
-  --config configs/flows/build_qwen3_vl_2b_fp16_engines.json
-```
+  --config configs/flows/build_qwen3_vl_2b_fp16_visual_engine.json
 
-只有输出中的 `ready` 为 `true` 才执行：
-
-```bash
 PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
-  --config configs/flows/build_qwen3_vl_2b_fp16_engines.json \
+  --config configs/flows/build_qwen3_vl_2b_fp16_visual_engine.json \
   --execute
 ```
 
-入口会再次核对 Edge-LLM commit，依次执行 `llm_build` 和 `visual_build`，并拒绝覆盖
-已有 engine。成功标准：
+再检查并构建 LLM engine：
+
+```bash
+PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine.json
+
+PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine.json \
+  --execute
+```
+
+两条入口都会再次核对 Edge-LLM commit，并拒绝覆盖已有 engine。成功标准：
 
 - `artifacts/engines/qwen3_vl_2b_fp16/llm/llm.engine`
 - `artifacts/engines/qwen3_vl_2b_fp16/visual/visual.engine`
 - LLM tokenizer/chat template/embedding 与 visual config/preprocessor sidecar
-- `reports/flows/build_qwen3_vl_2b_fp16_engines.json` 的 `status` 为 `succeeded`
+- 两个独立 flow record 的 `status` 均为 `succeeded`
 
-若发生 OOM，保存完整日志、`free -h`、`tegrastats` 和失败阶段；这仍是 FP16
-实验结果，不删除后直接改称 INT4 成功。
+2026-08-10 的实测中，视觉 flow 先生成 786 MiB `visual.engine`。启用已准备的临时
+8 GiB 磁盘 swap 后，独立 LLM flow 也执行成功并生成 3,453,798,316 字节的
+`llm.engine`：
+
+```bash
+sudo swapon --priority 1 /home/ubuntu/parksight-build.swap
+swapon --show
+free -h
+```
+
+该 swap 不写入 `/etc/fstab`。重复执行 `swapon` 返回 `Device or resource busy` 表示
+它已经启用。两个 engine 的 SHA-256、flow record 和日志均已保存；这仍是 FP16
+结果，不能改称 INT4 成功。
 
 ## 7. Jetson：启动预构建 engine server
 
@@ -216,13 +235,20 @@ cd /home/ubuntu/JetsonVLM
 export EDGE_LLM_ROOT=/home/ubuntu/TensorRT-Edge-LLM
 export PYTHONPATH=$EDGE_LLM_ROOT:$PWD/src
 export EDGELLM_PLUGIN_PATH=$EDGE_LLM_ROOT/build/libNvInfer_edgellm_plugin.so
-export LD_LIBRARY_PATH=$EDGE_LLM_ROOT/build:$LD_LIBRARY_PATH
+export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:$EDGE_LLM_ROOT/build:$LD_LIBRARY_PATH
 
 .venv-jetson/bin/python scripts/serve_edgellm.py \
   --engine-root artifacts/engines/qwen3_vl_2b_fp16 \
+  --weight-streaming-budget-bytes 0 \
   --host 127.0.0.1 \
   --port 8000
 ```
+
+`--weight-streaming-budget-bytes 0` 依赖项目保存的 runtime 补丁，在创建 context 前
+调用 `setWeightStreamingBudgetV2(0)`。不设置预算时，TensorRT 会尝试让约 3.44 GiB
+streamable weights 全部驻留 GPU，并在本设备上 OOM。0 预算能够运行，但会显著降低
+生成速度；后续应在 INT4 或更大可用内存条件下重新调优。
 
 另开一个 Jetson SSH 终端验证：
 
@@ -249,8 +275,10 @@ PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.analyze_image \
   --edge-url http://127.0.0.1:8000
 ```
 
-实际图片路径以 manifest 的 `image_ref` 为准。成功标准：输出
-`"succeeded": true`，并包含通过严格 schema 校验的 `assessment`。
+实际图片路径以 manifest 的 `image_ref` 为准。验收分为两层：HTTP 200、token 和
+`raw_output` 证明后端真实执行；只有存在通过严格 schema 的 `assessment` 才证明业务
+输出成功。2026-08-10 实测完成 HTTP 200 和 57 token，但字段类型错误，因此业务层
+如实记录为 `json_parse_error`。
 
 单图成功后再运行完整 pilot：
 
@@ -262,3 +290,14 @@ PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.run_study \
 最终报告为 `reports/jetson_edgellm_fp16_ps20_pilot.json`。只有该报告与
 `reports/jetson_transformers_fp16_ps20_pilot.json` 使用相同 workload identity、
 样本和功耗模式时，才计算加速比和质量差异。
+
+本次 20/20 样本完成后端执行，严格 JSON 有效率为 0/20。由原始报告与 874 条
+`tegrastats` 派生的结果为：端到端 p50/p90/p99 41.76/50.61/55.42 秒，平均输入功耗
+10.11 W，GPU 峰值温度 62.5°C，RAM/swap 峰值 7414/2579 MB。可复现摘要命令：
+
+```bash
+PYTHONPATH=src python scripts/summarize_jetson_study.py \
+  --study-report reports/jetson_edgellm_fp16_ps20_pilot.json \
+  --tegrastats reports/runtime/jetson_edgellm_fp16_ps20_pilot.tegrastats.log \
+  --output reports/jetson_edgellm_fp16_ps20_pilot.runtime-summary.json
+```

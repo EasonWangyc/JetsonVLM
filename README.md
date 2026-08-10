@@ -1,6 +1,7 @@
 # JetsonVLM
 
-基于Jetson Orin Nano和TensorRT-edge-llm框架，对Qwen-VL-2B-Instruct进行微调、量化、部署和推理，用于实时端侧场景。
+基于 Jetson Orin Nano 与 TensorRT Edge-LLM 的 Qwen3-VL-2B 泊车风险理解、部署与
+评测项目。LoRA 和 INT4 是后续实验阶段，不作为当前已完成能力。
 
 ```text
 ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
@@ -49,6 +50,14 @@ docs/             # 项目文档
 - Jetson TensorRT Edge-LLM：最终部署 runtime，与 Jetson Transformers 在同一工作负载下比较 FP16 和后续 INT4 结果。
 
 服务器性能不用于证明 Jetson 加速收益；部署性能结论来自 Jetson 同机实验。
+
+## 当前实测结论
+
+固定 revision 的 Qwen3-VL-2B 已完成服务器 ONNX 导出，以及 Jetson 上 LLM/visual
+FP16 engine 构建、双 engine HTTP 服务、真实单图和冻结 20 样本推理。20/20 样本
+完成后端执行，但严格 JSON 有效率为 0/20；端到端 p50 为 41.76 秒，平均板端输入
+功耗为 10.11 W。结果证明完整部署链路成立，也表明输出格式与领域枚举需要通过独立
+训练数据和 LoRA 继续修正。详见 [docs/status.md](docs/status.md)。
 
 ## 开始使用
 

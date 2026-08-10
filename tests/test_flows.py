@@ -31,6 +31,8 @@ class ExternalFlowPlanTests(unittest.TestCase):
         expected = {
             "export_qwen3_vl_2b_fp16.json": "export_model",
             "build_qwen3_vl_2b_fp16_engines.json": "build_engine",
+            "build_qwen3_vl_2b_fp16_llm_engine.json": "build_engine",
+            "build_qwen3_vl_2b_fp16_visual_engine.json": "build_engine",
         }
 
         for filename, stage in expected.items():
@@ -60,7 +62,14 @@ class ExternalFlowPlanTests(unittest.TestCase):
             / "export_qwen3_vl_2b_fp16.json"
         )
         export_outputs = {path.as_posix() for path in export_plan.expected_outputs}
+        export_inputs = {path.as_posix() for path in export_plan.required_inputs}
         build_outputs = {path.as_posix() for path in build_plan.expected_outputs}
+        self.assertTrue(
+            any(path.endswith("/model.safetensors") for path in export_inputs)
+        )
+        self.assertFalse(
+            any(path.endswith("/model.safetensors.index.json") for path in export_inputs)
+        )
         self.assertTrue(
             any(path.endswith("/llm/tokenizer.json") for path in export_outputs)
         )
@@ -72,6 +81,27 @@ class ExternalFlowPlanTests(unittest.TestCase):
         )
         self.assertTrue(
             any(path.endswith("/visual/config.json") for path in build_outputs)
+        )
+
+        llm_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_fp16_llm_engine.json"
+        )
+        visual_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_fp16_visual_engine.json"
+        )
+        self.assertIn("llm", llm_plan.command)
+        self.assertIn("visual", visual_plan.command)
+        self.assertTrue(
+            all("/visual/" not in path.as_posix() for path in llm_plan.expected_outputs)
+        )
+        self.assertTrue(
+            all("/llm/" not in path.as_posix() for path in visual_plan.expected_outputs)
         )
 
     def test_rejects_unknown_fields_and_unsafe_path_overlap(self) -> None:

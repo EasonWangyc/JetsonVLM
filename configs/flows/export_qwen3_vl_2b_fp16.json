@@ -9,7 +9,7 @@
   ],
   "required_inputs": [
     "../../models/Qwen3-VL-2B-Instruct-89644892/config.json",
-    "../../models/Qwen3-VL-2B-Instruct-89644892/model.safetensors.index.json"
+    "../../models/Qwen3-VL-2B-Instruct-89644892/model.safetensors"
   ],
   "expected_outputs": [
     "../../artifacts/onnx/qwen3_vl_2b_fp16/llm/model.onnx",

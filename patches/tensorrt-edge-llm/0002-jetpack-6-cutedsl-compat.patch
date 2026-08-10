@@ -1,0 +1,35 @@
+diff --git a/cpp/common/trtUtils.cpp b/cpp/common/trtUtils.cpp
+--- a/cpp/common/trtUtils.cpp
++++ b/cpp/common/trtUtils.cpp
+@@ -42,6 +42,6 @@ constexpr std::size_t kEngineDeviceTransferChunkSize = 4U * 1024U * 1024U;
+ constexpr std::size_t kEngineDeviceTransferBufferCount = 2U;
+ 
+-bool isDeviceAccessiblePointer(void* ptr) noexcept
++[[maybe_unused]] bool isDeviceAccessiblePointer(void* ptr) noexcept
+ {
+     cudaPointerAttributes attributes{};
+     cudaError_t const status = cudaPointerGetAttributes(&attributes, ptr);
+diff --git a/cpp/kernels/moe/f16_cutedsl/cuteDslF16MoeRunner.h b/cpp/kernels/moe/f16_cutedsl/cuteDslF16MoeRunner.h
+--- a/cpp/kernels/moe/f16_cutedsl/cuteDslF16MoeRunner.h
++++ b/cpp/kernels/moe/f16_cutedsl/cuteDslF16MoeRunner.h
+@@ -18,7 +18,20 @@
+ #pragma once
+ 
+ #if defined(CUTE_DSL_F16_MOE_ENABLED)
+ 
++#include <cuda.h>
++#if defined(TRT_EDGELLM_CUDA_LIBRARY_T_COMPAT)
++#include <cuda_runtime.h>
++#if CUDA_VERSION >= 12000 && CUDA_VERSION < 12080
++typedef CUlibrary cudaLibrary_t;
++static inline cudaError_t cudaLibraryUnload(cudaLibrary_t lib)
++{
++    CUresult r = cuLibraryUnload(lib);
++    return static_cast<cudaError_t>(r);
++}
++#endif // CUDA_VERSION >= 12000 && CUDA_VERSION < 12080
++#endif // TRT_EDGELLM_CUDA_LIBRARY_T_COMPAT
++
+ #include <cuda_runtime.h>
+ 
+ namespace trt_edgellm

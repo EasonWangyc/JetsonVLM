@@ -1,0 +1,13 @@
+diff --git a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+index 5f74a86..20066ce 100644
+--- a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
++++ b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+@@ -228,6 +228,8 @@ public:
+             }
+             else
+             {
++                LOG_INFO("Loading FMHA cubin: index=%d sm=%u size=%u function=%s", i, kernelMeta.mSM,
++                    kernelMeta.mCubinSize, kernelMeta.mFuncName);
+                 CUDA_DRIVER_CHECK(cuModuleLoadData(&hModule, kernelMeta.mCubin));
+                 mModules.insert(std::make_pair(kernelMeta.mCubin, hModule));
+             }

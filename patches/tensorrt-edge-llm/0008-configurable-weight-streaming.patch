@@ -1,0 +1,19 @@
+diff --git a/cpp/builder/builderUtils.cpp b/cpp/builder/builderUtils.cpp
+index 691633e..3a86834 100644
+--- a/cpp/builder/builderUtils.cpp
++++ b/cpp/builder/builderUtils.cpp
+@@ -271,8 +271,14 @@ std::unique_ptr<nvinfer1::IBuilderConfig> createBuilderConfig(nvinfer1::IBuilder
+     if (char const* value = std::getenv("EDGELLM_BUILDER_OPT_LEVEL"))
+     {
+         auto const level = std::stoi(value);
+         config->setBuilderOptimizationLevel(level);
+         LOG_INFO("TensorRT builder optimization level: %d", level);
+     }
++
++    if (std::getenv("EDGELLM_ENABLE_WEIGHT_STREAMING") != nullptr)
++    {
++        config->setFlag(nvinfer1::BuilderFlag::kWEIGHT_STREAMING);
++        LOG_INFO("TensorRT weight streaming: enabled");
++    }
+ 
+     return config;

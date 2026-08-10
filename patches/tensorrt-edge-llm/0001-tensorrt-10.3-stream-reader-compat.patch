@@ -1,0 +1,41 @@
+diff --git a/cpp/common/trtUtils.cpp b/cpp/common/trtUtils.cpp
+--- a/cpp/common/trtUtils.cpp
++++ b/cpp/common/trtUtils.cpp
+@@ -15,6 +15,7 @@
+ #include "trtUtils.h"
+ #include "checkMacros.h"
+ #include "cudaUtils.h"
++#include "mmapReader.h"
+ #include <algorithm>
+ #include <array>
+ #include <cerrno>
+@@ -152,6 +153,7 @@ private:
+     bool mCopyPending{false};
+ };
+ 
++#if NV_TENSORRT_MAJOR > 10 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 7)
+ class FileStreamReaderV2 : public nvinfer1::IStreamReaderV2
+ {
+ public:
+@@ -303,6 +305,7 @@ private:
+     int64_t mOffset{0};
+     std::array<PinnedHostBuffer, kEngineDeviceTransferBufferCount> mDeviceTransferBuffers;
+ };
++#endif
+ 
+ } // namespace
+ 
+@@ -461,7 +464,13 @@ std::unique_ptr<nvinfer1::ICudaEngine> deserializeCudaEngineFromFile(
+     nvinfer1::IRuntime& runtime, std::filesystem::path const& enginePath)
+ {
++#if NV_TENSORRT_MAJOR > 10 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 7)
+     FileStreamReaderV2 streamReader(enginePath);
+     auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(runtime.deserializeCudaEngine(streamReader));
++#else
++    file_io::MmapReader mmapReader(enginePath);
++    auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(
++        runtime.deserializeCudaEngine(mmapReader.getData(), mmapReader.getSize()));
++#endif
+     if (!engine)
+     {
+         LOG_ERROR("Failed to deserialize TensorRT engine from file: %s", enginePath.string().c_str());

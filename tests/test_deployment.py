@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
 from scripts.build_edgellm_vlm_engines import build_commands
-from scripts.serve_edgellm import serve_prebuilt_engines
+from scripts.serve_edgellm import (
+    configure_weight_streaming_budget,
+    serve_prebuilt_engines,
+)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_weight_streaming_budget_is_exported_for_runtime(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            configure_weight_streaming_budget(0)
+            self.assertEqual(
+                os.environ["EDGELLM_WEIGHT_STREAMING_BUDGET_BYTES"], "0"
+            )
+
+    def test_weight_streaming_budget_rejects_negative_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must not be negative"):
+            configure_weight_streaming_budget(-1)
+
     def test_vlm_engine_builder_prepares_llm_then_visual_build(self) -> None:
         edge_root = Path("/opt/TensorRT-Edge-LLM")
         onnx_root = Path("/work/onnx")

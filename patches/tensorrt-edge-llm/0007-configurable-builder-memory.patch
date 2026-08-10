@@ -1,0 +1,30 @@
+diff --git a/cpp/builder/builderUtils.cpp b/cpp/builder/builderUtils.cpp
+index d257c2e..691633e 100644
+--- a/cpp/builder/builderUtils.cpp
++++ b/cpp/builder/builderUtils.cpp
+@@ -22,4 +22,5 @@
+ #include <NvOnnxParser.h>
++#include <cstdlib>
+ #include <fstream>
+ #include <sstream>
+ #include <string>
+@@ -259,5 +260,19 @@ std::unique_ptr<nvinfer1::IBuilderConfig> createBuilderConfig(nvinfer1::IBuilder
+ #if NV_TENSORRT_MAJOR >= 11 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 3)
+     config->setPreviewFeature(nvinfer1::PreviewFeature::kALIASED_PLUGIN_IO_10_03, true);
+ #endif
++
++    if (char const* value = std::getenv("EDGELLM_WORKSPACE_LIMIT_MIB"))
++    {
++        auto const limitMiB = std::stoull(value);
++        config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, limitMiB * 1024ULL * 1024ULL);
++        LOG_INFO("TensorRT workspace limit: %llu MiB", limitMiB);
++    }
++
++    if (char const* value = std::getenv("EDGELLM_BUILDER_OPT_LEVEL"))
++    {
++        auto const level = std::stoi(value);
++        config->setBuilderOptimizationLevel(level);
++        LOG_INFO("TensorRT builder optimization level: %d", level);
++    }
+ 
+     return config;

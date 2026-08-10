@@ -1,0 +1,28 @@
+diff --git a/cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp b/cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp
+--- a/cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp
++++ b/cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp
+@@ -211,16 +211,24 @@ bool FusedNvfp4GemmAllReducePlugin::supportsFormatCombination(
+     bool const isOutput = (pos >= nbInputs);
+     if (isOutput)
+     {
+         return desc.type == DataType::kHALF;
+     }
+     if (pos == kFP4_ACT_IDX)
+     {
++#if NV_TENSORRT_MAJOR >= 11 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 8)
+         return desc.type == DataType::kFP4 || desc.type == DataType::kINT8 || desc.type == DataType::kFP8;
++#else
++        return false;
++#endif
+     }
+     if (pos == kFP4_WEIGHT_IDX)
+     {
++#if NV_TENSORRT_MAJOR >= 11 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 8)
+         return desc.type == DataType::kFP4 || desc.type == DataType::kINT8 || desc.type == DataType::kFP8;
++#else
++        return false;
++#endif
+     }
+     if (pos == kFP4_ACT_SCALE_IDX)
+     {
+         return desc.type == DataType::kFLOAT;
