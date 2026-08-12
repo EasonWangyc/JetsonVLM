@@ -27,6 +27,41 @@ class ExternalFlowPlanTests(unittest.TestCase):
                 self.assertEqual(len(first.identity), 64)
                 self.assertFalse(first.readiness_mapping()["ready"])
 
+    def test_loads_pinned_qwen3_vl_int4_awq_flows(self) -> None:
+        expected = {
+            "quantize_qwen3_vl_2b_int4_awq.json": "quantize_model",
+            "export_qwen3_vl_2b_int4_awq.json": "export_model",
+            "build_qwen3_vl_2b_int4_awq_llm_engine_i768_k1024.json": (
+                "build_engine"
+            ),
+        }
+
+        plans = {
+            filename: ExternalFlowPlan.load(
+                REPOSITORY_ROOT / "configs" / "flows" / filename
+            )
+            for filename in expected
+        }
+        for filename, stage in expected.items():
+            with self.subTest(filename=filename):
+                self.assertEqual(plans[filename].stage, stage)
+                self.assertNotIn("replace-with-", " ".join(plans[filename].command))
+
+        quantize_command = plans[
+            "quantize_qwen3_vl_2b_int4_awq.json"
+        ].command
+        self.assertIn("int4_awq", quantize_command)
+        self.assertIn("128", quantize_command)
+        self.assertNotIn("--visual_quantization", quantize_command)
+        self.assertNotIn("--lm_head_quantization", quantize_command)
+
+        build_command = plans[
+            "build_qwen3_vl_2b_int4_awq_llm_engine_i768_k1024.json"
+        ].command
+        self.assertIn("768", build_command)
+        self.assertIn("1024", build_command)
+        self.assertNotIn("--enable-weight-streaming", build_command)
+
     def test_loads_pinned_qwen3_vl_fp16_deployment_flows(self) -> None:
         expected = {
             "export_qwen3_vl_2b_fp16.json": "export_model",

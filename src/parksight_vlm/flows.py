@@ -1,4 +1,4 @@
-"""训练、合并、导出和 engine 构建命令的可审计计划。"""
+"""训练、合并、量化、导出和 engine 构建命令的可审计计划。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,15 @@ class FlowValidationError(ValueError):
     """当外部模型流程计划不完整或不一致时抛出。"""
 
 
-FLOW_STAGES = frozenset({"train_lora", "merge_lora", "export_model", "build_engine"})
+FLOW_STAGES = frozenset(
+    {
+        "train_lora",
+        "merge_lora",
+        "quantize_model",
+        "export_model",
+        "build_engine",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

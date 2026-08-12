@@ -1,1 +1,2 @@
 *.patch text eol=lf -whitespace
+tests/fixtures/**/*.json text eol=lf
