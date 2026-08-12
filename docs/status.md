@@ -37,17 +37,22 @@
 - 运行时补丁在创建 execution context 前调用 TensorRT
   `setWeightStreamingBudgetV2(0)`。LLM 与视觉 engine 已同时加载，HTTP `/health`
   返回 `healthy`，decode CUDA graph 捕获成功。
-- 真实单图推理返回 HTTP 200 和 57 个 token，端到端 `38943.90 ms`；模型输出 JSON
-  字段类型不符合严格 schema，因此如实记录为 `json_parse_error`。
-- 冻结 `ps20_pilot_v1` 的 20 个样本均完成后端推理；严格 JSON 有效率为 `0/20`，
-  失败汇总为 `json_parse_error: 20`。端到端 p50/p90/p99 分别为
-  `41.76/50.61/55.42 s`，聚合端到端输出速率为 `1.48 token/s`。
-- 874 条 `tegrastats` 记录显示 GPU 利用率均值 `98.79%`、RAM 峰值 `7414 MB`、
-  swap 峰值 `2579 MB`、板端输入功耗均值 `10.11 W`、GPU 峰值温度 `62.5°C`。
+- 多模态 system content 已统一为 Qwen3-VL chat template 接受的 content 数组，并由
+  固定 fixture 和 40 个无硬件测试覆盖。
+- Edge-LLM C++ runtime 已应用“先分配 base/decoder context，再加载视觉 runner”的
+  补丁；最终 FP16 LLM engine profile 为 input 768、KV 1024，单图连续 3/3 严格 JSON
+  验收通过。
+- 冻结 `ps20_pilot_v1` 的 20 个样本均完成后端推理；严格 JSON 有效率为 `20/20`，
+  失败汇总为空。端到端 p50/p90/p99 分别为 `50.75/69.08/75.08 s`，聚合端到端
+  输出速率为 `1.48 token/s`。
+- 质量结果为风险等级准确率 `35%`、事件 micro-F1 `0.359`、不安全建议率 `0%`。
+- 542 条 `tegrastats` 记录显示 GPU 利用率均值 `97.39%`、RAM 峰值 `7418 MB`、
+  swap 峰值 `1904 MB`、板端输入功耗均值 `10.05 W`、GPU 峰值温度 `65.03°C`。
 
 上述状态证明固定版本的 `ONNX -> FP16 engine -> Edge-LLM HTTP -> ParkSight Adapter ->
-InferenceRecord/StudyReport` 已在目标 Jetson 上真实执行。它不证明模型已经满足业务
-质量要求：当前主要误差是 20/20 输出未遵守严格字段类型和领域事件枚举。
+InferenceRecord/StudyReport` 已在目标 Jetson 上真实执行，并完成 20/20 严格 JSON
+验收。它不证明模型已经满足业务质量要求：当前主要误差已经从输出格式转为风险等级
+和领域事件判断，需通过独立训练数据与 LoRA 改进。
 具体环境、命令和校验结果见 [`progress.md`](progress.md)。
 
 ## 尚未完成及证据边界

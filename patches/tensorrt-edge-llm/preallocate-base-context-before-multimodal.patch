@@ -1,0 +1,59 @@
+diff --git a/cpp/runtime/llmInferenceRuntime.cpp b/cpp/runtime/llmInferenceRuntime.cpp
+--- a/cpp/runtime/llmInferenceRuntime.cpp
++++ b/cpp/runtime/llmInferenceRuntime.cpp
+@@ -382,6 +382,25 @@ void LLMInferenceRuntime::initializeCommon(std::string const& engineDir, std::st
+     mDecoderRegistry = std::make_unique<DecoderRegistry>(
+         *mDecodingRuntimeContext, DecoderRegistryConfig{std::filesystem::path(engineDir), draftingConfig, stream});
+ 
++    // Allocate the largest base/decoder context buffer before loading optional
++    // multimodal engines. On memory-constrained unified-memory devices, loading
++    // the visual weights first can leave insufficient room for this single large
++    // allocation even when total memory would otherwise fit the complete model.
++    int64_t const baseContextMemorySize = mBaseExecutor->getRequiredContextMemorySize();
++    int64_t const strategyContextMemorySize = mDecoderRegistry ? mDecoderRegistry->getRequiredContextMemorySize() : 0;
++    int64_t sharedContextMemorySize = std::max(baseContextMemorySize, strategyContextMemorySize);
++    mSharedExecContextMemory = rt::Tensor({sharedContextMemorySize}, rt::DeviceType::kGPU,
++        nvinfer1::DataType::kUINT8, "LLMInferenceRuntime::mSharedExecContextMemory");
++    mBaseExecutor->setContextMemory(mSharedExecContextMemory);
++    if (mDecoderRegistry)
++    {
++        mDecoderRegistry->setContextMemory(mSharedExecContextMemory);
++    }
++    LOG_INFO(
++        "Preallocated base execution context memory: %zu bytes (base requires: %zu, strategy requires: %zu)",
++        static_cast<size_t>(sharedContextMemorySize), static_cast<size_t>(baseContextMemorySize),
++        static_cast<size_t>(strategyContextMemorySize));
++
+     // -----------------------------------------------------------------------
+     // 14. Optional multimodal runners.
+     // -----------------------------------------------------------------------
+@@ -445,19 +464,21 @@ void LLMInferenceRuntime::initializeCommon(std::string const& engineDir, std::st
+     //     draft, and optional vision/audio). All engines execute serially so
+     //     they can share a single buffer sized to the max requirement.
+     // -----------------------------------------------------------------------
+-    int64_t const baseContextMemorySize = mBaseExecutor->getRequiredContextMemorySize();
+-    int64_t const strategyContextMemorySize = mDecoderRegistry ? mDecoderRegistry->getRequiredContextMemorySize() : 0;
+     int64_t const visionContextMemorySize = mVisionRunner ? mVisionRunner->getRequiredContextMemorySize() : 0;
+     int64_t const audioContextMemorySize = mAudioRunner ? mAudioRunner->getRequiredContextMemorySize() : 0;
+     int64_t const actionContextMemorySize = mActionRunner ? mActionRunner->getRequiredContextMemorySize() : 0;
+-    int64_t const sharedContextMemorySize = std::max({baseContextMemorySize, strategyContextMemorySize,
++    int64_t const requiredSharedContextMemorySize = std::max({baseContextMemorySize, strategyContextMemorySize,
+         visionContextMemorySize, audioContextMemorySize, actionContextMemorySize});
+-    mSharedExecContextMemory = rt::Tensor({sharedContextMemorySize}, rt::DeviceType::kGPU, nvinfer1::DataType::kUINT8,
+-        "LLMInferenceRuntime::mSharedExecContextMemory");
+-    mBaseExecutor->setContextMemory(mSharedExecContextMemory);
+-    if (mDecoderRegistry)
++    if (requiredSharedContextMemorySize > sharedContextMemorySize)
+     {
+-        mDecoderRegistry->setContextMemory(mSharedExecContextMemory);
++        sharedContextMemorySize = requiredSharedContextMemorySize;
++        mSharedExecContextMemory = rt::Tensor({sharedContextMemorySize}, rt::DeviceType::kGPU,
++            nvinfer1::DataType::kUINT8, "LLMInferenceRuntime::mSharedExecContextMemory");
++        mBaseExecutor->setContextMemory(mSharedExecContextMemory);
++        if (mDecoderRegistry)
++        {
++            mDecoderRegistry->setContextMemory(mSharedExecContextMemory);
++        }
+     }
+     if (mVisionRunner)
+     {

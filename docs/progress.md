@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
 ## 1. 当前结论
 
@@ -22,10 +22,12 @@ Python binding 和 builder/runtime 可执行文件均通过检查。
 `setWeightStreamingBudgetV2(0)` 在 8 GB 设备上同时加载两套 engine，HTTP 健康检查、
 真实单图和冻结 20 样本 study 均已执行。
 
-20/20 样本完成后端推理，但 20/20 输出因数组字段类型和领域枚举不符合严格 schema
-被记录为 `json_parse_error`。端到端 p50/p90/p99 为 41.76/50.61/55.42 秒；874 条
-`tegrastats` 显示平均板端输入功耗 10.11 W、GPU 峰值温度 62.5°C。该结果证明完整
-部署链路成立，同时形成了 LoRA 数据建设与 INT4 内存优化的明确依据。
+修复多模态 system content 契约后，使用补丁后的 runtime 和缩小到
+`maxInputLen=768`、`maxKVCacheCapacity=1024` 的 FP16 engine 重新运行冻结 20 样本。
+20/20 样本均完成后端推理并通过严格 schema，失败汇总为空。端到端 p50/p90/p99 为
+50.75/69.08/75.08 秒；542 条 `tegrastats` 显示平均板端输入功耗 10.05 W、GPU 峰值
+温度 65.03°C。风险等级准确率为 35%，事件 micro-F1 为 0.359，说明部署与格式链路
+已经闭环，但领域质量仍需要 LoRA/数据改进。
 
 从项目开始至今的完整命令、结果与证据见
 [`execution-report.md`](execution-report.md)。
@@ -47,7 +49,7 @@ Python binding 和 builder/runtime 可执行文件均通过检查。
 | 模型准备 | 固定模型 commit、下载 12 个文件并校验权重哈希 | Hugging Face 缓存与校验结果 |
 | FP16 engine | 独立构建 LLM 与视觉 engine，保留哈希和 flow record | 两个 `succeeded` flow record |
 | FP16 runtime | 插件加载、权重流式预算、双 engine、CUDA graph 与 HTTP 服务 | server log 与 `/health` 200 |
-| 单图/20 样本 | 真实图片推理、严格 JSON 失败记录与同机遥测 | StudyReport、runtime summary、874 条 tegrastats |
+| 单图/20 样本 | 真实图片推理、20/20 严格 JSON 成功与同机遥测 | StudyReport、runtime summary、542 条 tegrastats |
 
 ## 3. Jetson 环境快照
 
@@ -221,18 +223,20 @@ NvMap/NVML 错误文本归因。
 
 | 指标 | 实测结果 |
 | --- | --- |
-| 单图后端执行 | HTTP 200，57 token，38.94 s |
+| 单图稳定性验收 | 同一图片连续 3/3 严格 JSON 成功，平均 76.19 s |
 | 20 样本后端完成率 | 20/20 |
-| 严格 JSON 有效率 | 0/20 |
-| 失败类型 | `json_parse_error: 20` |
-| 端到端 p50/p90/p99 | 41.76/50.61/55.42 s |
+| 严格 JSON 有效率 | 20/20（100%） |
+| 失败类型 | 无 |
+| 风险等级准确率 / 事件 micro-F1 | 35% / 0.359 |
+| 不安全建议率 | 0% |
+| 端到端 p50/p90/p99 | 50.75/69.08/75.08 s |
 | 聚合端到端输出速率 | 1.48 token/s |
-| RAM / swap 峰值 | 7414/2579 MB |
-| GPU 利用率均值 | 98.79% |
-| 板端输入功耗均值 | 10.11 W |
-| GPU 峰值温度 | 62.5°C |
+| RAM / swap 峰值 | 7418/1904 MB |
+| GPU 利用率均值 | 97.39% |
+| 板端输入功耗均值 | 10.05 W |
+| GPU 峰值温度 | 65.03°C |
 
-原始证据保存在本机忽略目录 `reports/jetson-runtime-20260810/`。派生摘要由
+原始证据保存在本机忽略目录 `reports/jetson-runtime-20260812/`。派生摘要由
 `scripts/summarize_jetson_study.py` 从原始 StudyReport 与 tegrastats 生成，既不修改
 原始记录，也不把 JSON 失败计为业务成功。
 
@@ -245,7 +249,7 @@ NvMap/NVML 错误文本归因。
 冻结 test 集复测。
 
 INT4 尚无校准集、量化配置或 engine。FP16 运行已经证明 0-byte 权重驻留预算能在
-8 GB Jetson 上运行，但代价是 p50 约 41.76 秒；INT4 的首要目标是降低权重与 scratch
+8 GB Jetson 上运行，但代价是 p50 约 50.75 秒；INT4 的首要目标是降低权重与 scratch
 压力、提高 GPU 驻留比例和 token 吞吐，而不是把尚未执行的计划写成完成结果。
 
 同机加速比还需要补齐 Jetson Transformers FP16 的同一 20 样本报告；早期 OOM 记录

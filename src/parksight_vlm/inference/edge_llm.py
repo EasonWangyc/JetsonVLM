@@ -34,22 +34,10 @@ class EdgeLlmHttpBackend:
         self._timeout_seconds = timeout_seconds
 
     def generate(self, *, image_path: Path, workload: FrozenWorkload) -> RuntimeGeneration:
-        payload: dict[str, object] = {
-            "model": self._model_name,
-            "messages": [
-                {"role": "system", "content": workload.system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": str(image_path)},
-                        {"type": "text", "text": workload.render_user_prompt()},
-                    ],
-                },
-            ],
-            "max_tokens": workload.generation.max_new_tokens,
-        }
-        if not workload.generation.do_sample:
-            payload["temperature"] = 0.0
+        payload = self.build_request_payload(
+            image_path=image_path,
+            workload=workload,
+        )
         request = Request(
             self._endpoint,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -69,6 +57,36 @@ class EdgeLlmHttpBackend:
         if not isinstance(output_tokens, int):
             output_tokens = None
         return RuntimeGeneration(raw_output=raw_output, output_tokens=output_tokens)
+
+    def build_request_payload(
+        self,
+        *,
+        image_path: Path,
+        workload: FrozenWorkload,
+    ) -> dict[str, object]:
+        """构造与真实 HTTP 调用完全相同的可审计请求。"""
+        payload: dict[str, object] = {
+            "model": self._model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": workload.system_prompt}
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": str(image_path)},
+                        {"type": "text", "text": workload.render_user_prompt()},
+                    ],
+                },
+            ],
+            "max_tokens": workload.generation.max_new_tokens,
+        }
+        if not workload.generation.do_sample:
+            payload["temperature"] = 0.0
+        return payload
 
 
 class EdgeLlmRuntime(RiskRuntime):

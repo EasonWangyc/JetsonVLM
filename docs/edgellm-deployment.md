@@ -179,6 +179,24 @@ test -x build/examples/llm/llm_inference
 test -x build/examples/multimodal/visual_build
 ```
 
+在 8 GB Jetson 上，固定 revision 的原始 runtime 会在加载视觉权重后才申请约 1.35 GB
+共享 execution context，可能触发统一内存 OOM。应用仓库中已验证的分配顺序补丁并增量
+编译 Python binding：
+
+```bash
+cd /home/ubuntu/TensorRT-Edge-LLM
+git apply --check \
+  /home/ubuntu/JetsonVLM/patches/tensorrt-edge-llm/preallocate-base-context-before-multimodal.patch
+git apply \
+  /home/ubuntu/JetsonVLM/patches/tensorrt-edge-llm/preallocate-base-context-before-multimodal.patch
+
+/home/ubuntu/JetsonVLM/.venv-jetson/bin/cmake --build build \
+  --target _edgellm_runtime -j2
+```
+
+补丁只改变共享 context 的分配顺序：先为 LLM base/decoder 分配，再加载可选视觉
+runner；没有改变 engine 数值计算。对已应用补丁的工作树不要重复执行 `git apply`。
+
 ## 6. Jetson：分别构建两个 engine
 
 LLM 与视觉 engine 使用独立 flow，避免其中一个失败时覆盖另一个阶段的证据。先构建
@@ -198,16 +216,19 @@ PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
 
 ```bash
 PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
-  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine.json
+  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine_i768_k1024.json
 
 PYTHONPATH=src .venv-jetson/bin/python scripts/build_engine.py \
-  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine.json \
+  --config configs/flows/build_qwen3_vl_2b_fp16_llm_engine_i768_k1024.json \
   --execute
+
+ln -s ../qwen3_vl_2b_fp16/visual \
+  artifacts/engines/qwen3_vl_2b_fp16_i768_k1024/visual
 ```
 
 两条入口都会再次核对 Edge-LLM commit，并拒绝覆盖已有 engine。成功标准：
 
-- `artifacts/engines/qwen3_vl_2b_fp16/llm/llm.engine`
+- `artifacts/engines/qwen3_vl_2b_fp16_i768_k1024/llm/llm.engine`
 - `artifacts/engines/qwen3_vl_2b_fp16/visual/visual.engine`
 - LLM tokenizer/chat template/embedding 与 visual config/preprocessor sidecar
 - 两个独立 flow record 的 `status` 均为 `succeeded`
@@ -239,7 +260,7 @@ export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/
 export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:$EDGE_LLM_ROOT/build:$LD_LIBRARY_PATH
 
 .venv-jetson/bin/python scripts/serve_edgellm.py \
-  --engine-root artifacts/engines/qwen3_vl_2b_fp16 \
+  --engine-root artifacts/engines/qwen3_vl_2b_fp16_i768_k1024 \
   --weight-streaming-budget-bytes 0 \
   --host 127.0.0.1 \
   --port 8000
@@ -270,7 +291,7 @@ PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.analyze_image \
   --runtime tensorrt_edge_llm_http \
   --backend-revision 7f061f21f0a581ba234a1e233c9315b89d8e47d6 \
   --model-revision 89644892e4d85e24eaac8bacfd4f463576704203 \
-  --adapter-revision edge-http-v2 \
+  --adapter-revision edge-http-system-content-array-v1 \
   --precision fp16 \
   --edge-url http://127.0.0.1:8000
 ```
@@ -284,20 +305,22 @@ PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.analyze_image \
 
 ```bash
 PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.run_study \
-  --config configs/studies/jetson_edgellm_fp16_ps20_pilot.json
+  --config configs/studies/jetson_edgellm_fp16_ps20_pilot_promptfix.json
 ```
 
-最终报告为 `reports/jetson_edgellm_fp16_ps20_pilot.json`。只有该报告与
+最终报告为 `reports/jetson_edgellm_fp16_ps20_pilot_promptfix_i768_k1024.json`。只有该报告与
 `reports/jetson_transformers_fp16_ps20_pilot.json` 使用相同 workload identity、
 样本和功耗模式时，才计算加速比和质量差异。
 
-本次 20/20 样本完成后端执行，严格 JSON 有效率为 0/20。由原始报告与 874 条
-`tegrastats` 派生的结果为：端到端 p50/p90/p99 41.76/50.61/55.42 秒，平均输入功耗
-10.11 W，GPU 峰值温度 62.5°C，RAM/swap 峰值 7414/2579 MB。可复现摘要命令：
+2026-08-12 使用 prompt 修复、runtime 分配顺序补丁和 768/1024 engine 重新实测：
+20/20 样本完成后端执行并通过严格 JSON，失败汇总为空；风险等级准确率 35%，事件
+micro-F1 0.359，不安全建议率 0%。端到端 p50/p90/p99 为 50.75/69.08/75.08 秒，
+平均输入功耗 10.05 W，GPU 峰值温度 65.03°C，RAM/swap 峰值 7418/1904 MB。
+可复现摘要命令：
 
 ```bash
 PYTHONPATH=src python scripts/summarize_jetson_study.py \
-  --study-report reports/jetson_edgellm_fp16_ps20_pilot.json \
-  --tegrastats reports/runtime/jetson_edgellm_fp16_ps20_pilot.tegrastats.log \
-  --output reports/jetson_edgellm_fp16_ps20_pilot.runtime-summary.json
+  --study-report reports/jetson_edgellm_fp16_ps20_pilot_promptfix_i768_k1024.json \
+  --tegrastats reports/runtime/tegrastats_promptfix_i768_k1024_20sample_20260812.log \
+  --output reports/jetson_edgellm_fp16_ps20_pilot_promptfix_i768_k1024.runtime-summary.json
 ```

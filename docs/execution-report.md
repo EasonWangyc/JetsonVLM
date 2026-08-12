@@ -1298,3 +1298,57 @@ reports/jetson-runtime-20260810/
 INT4 当前同样只有规划，没有校准数据、量化配置、INT4 engine 或板端报告。FP16
 weight streaming 的 3.44 GB streamable weights、1.24 GB scratch、约 7.4 GB RAM 占用
 和 41.76 秒 p50 已构成后续 INT4 的客观动机，但不能代替 INT4 实测证据。
+
+## 21. Prompt 与统一内存修复后的最终验收（2026-08-12）
+
+### 21.1 修复内容
+
+- 将 Qwen3-VL 的 system message 固定为 content 数组结构，并用真实 chat template
+  fixture 覆盖 Transformers 与 Edge-LLM 两条 Adapter。
+- 实测 Edge-LLM C++ 最终请求长度为 735 token，将 LLM engine profile 固定为
+  `maxInputLen=768`、`maxKVCacheCapacity=1024`。
+- 在固定 Edge-LLM commit 上应用
+  `patches/tensorrt-edge-llm/preallocate-base-context-before-multimodal.patch`，先申请
+  1,347,639,296 字节 base/decoder execution context，再加载 visual runner，解决 8 GB
+  统一内存上加载顺序导致的 `cudaMalloc` OOM。
+
+最终 LLM engine 为 `3453786212` 字节，SHA-256 为
+`5a679dceb7fdbe5661dd5ae67ba28804f0e18341f10adeb99b2906c2d8cfcf05`。补丁后的
+Python runtime binding 为 `47559536` 字节，SHA-256 为
+`cc9518f4adbe9a6e2cf7512b9cf9803e80d6491d09bf8d8a46092b966d2ab4de`。
+
+### 21.2 单图与 20 样本结果
+
+同一图片连续三次均返回 HTTP 200、`failure=null` 和通过严格 schema 的 assessment，
+平均端到端时延 `76.19 s`，平均速度 `1.496 token/s`。
+
+随后以独立 study id 运行冻结 `ps20_pilot_v1`：
+
+```text
+backend completed       = 20/20
+strict JSON valid       = 20/20
+failure summary         = {}
+risk level accuracy     = 0.35
+event micro-F1          = 0.3590
+unsafe advice rate      = 0
+end-to-end p50/p90/p99  = 50.75/69.08/75.08 s
+aggregate output rate   = 1.480 token/s
+```
+
+542 条 tegrastats 的派生结果：
+
+```text
+RAM peak                = 7418 MB
+swap peak               = 1904 MB
+GPU utilization mean   = 97.39%
+VDD_IN mean/max         = 10.05/10.70 W
+GPU temperature mean/max = 63.13/65.03 C
+```
+
+该结果把 2026-08-10 的严格 JSON 有效率从 0/20 修复到 20/20，并证明补丁后的 runtime
+能够承受完整连续负载。风险准确率与事件 F1 仍偏低，因此 LoRA 是质量优化阶段，不再是
+修复部署或格式链路的前置条件。原始证据与派生摘要保存在：
+
+```text
+reports/jetson-runtime-20260812/
+```

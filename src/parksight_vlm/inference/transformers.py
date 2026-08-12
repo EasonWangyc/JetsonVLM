@@ -63,7 +63,7 @@ class HuggingFaceQwen3VlBackend:
             image = source_image.convert("RGB").resize(
                 (workload.input_size.width, workload.input_size.height) # 预处理图片，转换成RGB并缩放至指定长×宽
             )
-        messages = _build_chat_messages(image=image, workload=workload)
+        messages = build_qwen3_vl_chat_messages(image=image, workload=workload)
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -136,7 +136,11 @@ class HuggingFaceQwen3VlBackend:
         self._model.eval()
 
 
-def _build_chat_messages(*, image: Any, workload: FrozenWorkload) -> list[dict[str, Any]]:
+def build_qwen3_vl_chat_messages(
+    *,
+    image: Any,
+    workload: FrozenWorkload,
+) -> list[dict[str, Any]]:
     """按 Qwen3-VL Processor 要求构造统一的多模态 content 列表。"""
     return [
         {

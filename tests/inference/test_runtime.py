@@ -21,8 +21,8 @@ from parksight_vlm.inference import (
     TransformersRuntime,
 )
 from parksight_vlm.inference.transformers import (
-    _build_chat_messages,
     _require_cuda_architecture,
+    build_qwen3_vl_chat_messages,
 )
 from parksight_vlm.workload import FrozenWorkload
 
@@ -50,7 +50,7 @@ class RuntimeTests(unittest.TestCase):
     def test_qwen3_vl_messages_use_typed_content_items(self) -> None:
         image = object()
 
-        messages = _build_chat_messages(image=image, workload=WORKLOAD)
+        messages = build_qwen3_vl_chat_messages(image=image, workload=WORKLOAD)
 
         self.assertEqual(
             messages[0],
@@ -198,8 +198,18 @@ class RuntimeTests(unittest.TestCase):
 
         request = mocked_urlopen.call_args.args[0]
         request_payload = json.loads(request.data.decode("utf-8"))
+        system_message = request_payload["messages"][0]
         image_item = request_payload["messages"][1]["content"][0]
         text_item = request_payload["messages"][1]["content"][1]
+        self.assertEqual(
+            system_message,
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": WORKLOAD.system_prompt}
+                ],
+            },
+        )
         self.assertEqual(image_item["type"], "image")
         self.assertEqual(text_item["type"], "text")
         self.assertEqual(text_item["text"], WORKLOAD.render_user_prompt())
