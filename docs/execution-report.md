@@ -1352,3 +1352,56 @@ GPU temperature mean/max = 63.13/65.03 C
 ```text
 reports/jetson-runtime-20260812/
 ```
+
+## 22. LoRA 合并模型 Jetson 部署与评测（2026-08-13）
+
+第 20.5 节是 2026-08-10 的阶段快照；此后已补齐独立训练/验证数据、LoRA 训练、合并、
+服务器质量对照、ONNX 导出和本节板端实测。
+
+服务器导出的 LLM ONNX 归档为 4,078,346,240 字节，SHA-256 为
+`5053f18b8a86251d070a2d8267f0fcd8adf578d2f0c09e614a0fcd4cdc078f96`。归档通过支持
+Range 的回环 HTTP 服务和 SSH 本地转发传到 Jetson，`aria2c` 断点下载平均 2.9 MiB/s；
+归档与内部 7 个文件均通过 SHA-256 校验。
+
+板端执行：
+
+```bash
+.venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_lora_ps80_v1_llm_engine_i768_k1024.json \
+  --execute
+```
+
+flow 状态为 `succeeded`，6/6 声明输出存在。LoRA LLM engine 为 3,453,786,212 字节，
+SHA-256 为 `d38adc5d532615d7183a6b4aa8413020bd76a5991e49ecd51ca84d0442334224`；视觉
+engine 复用同一基础 revision 的既有 FP16 产物。
+
+图形桌面状态下，新 LoRA 与已知成功的 Base FP16 均在视觉 engine 的 811,032,832
+字节 NvMap 分配处 OOM，排除了 LoRA engine 特有回归。临时切换
+`multi-user.target`、释放显示栈 NvMap 客户端并执行 page cache 清理和内存 compaction
+后，LoRA LLM/视觉 engine、HTTP `/health` 与 decode CUDA graph 均成功。评测结束后
+恢复 `graphical.target`，Docker、Snap、fwupd 与 PackageKit 均为 active。
+
+同图连续三次 smoke 均为严格 JSON 成功，端到端时延为 32.58、32.50、32.51 秒。冻结
+20 样本 Study 结果：
+
+```text
+backend completed       = 20/20
+strict JSON valid       = 20/20
+failure summary         = {}
+risk level accuracy     = 0.35
+event micro-F1          = 0.3889
+unsafe advice rate      = 0
+end-to-end mean         = 32.01 s
+end-to-end p50/p90/p99  = 30.60/33.08/40.90 s
+output tokens           = 924
+aggregate output rate   = 1.443 token/s
+```
+
+319 条 `tegrastats` 的 RAM/swap 峰值为 7351/580 MB，GPU 利用率均值 98.20%，输入功耗
+均值 10.10 W，GPU 峰温 61.94°C。同板 Base FP16 的事件 micro-F1 为 0.3590，LoRA
+为 0.3889；平均延迟下降 40.3%，但输出 token 同时减少 41.8%，所以不能把该延迟差
+表述为运行时加速。原始证据保存在：
+
+```text
+reports/jetson-lora-20260813/
+```

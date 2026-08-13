@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 ## 1. 当前结论
 
@@ -27,7 +27,8 @@ Python binding 和 builder/runtime 可执行文件均通过检查。
 20/20 样本均完成后端推理并通过严格 schema，失败汇总为空。端到端 p50/p90/p99 为
 50.75/69.08/75.08 秒；542 条 `tegrastats` 显示平均板端输入功耗 10.05 W、GPU 峰值
 温度 65.03°C。风险等级准确率为 35%，事件 micro-F1 为 0.359，说明部署与格式链路
-已经闭环，但领域质量仍需要 LoRA/数据改进。
+已经闭环。LoRA 合并模型随后也在 Jetson 完成 engine 构建和同一 20 样本评测，事件
+micro-F1 提升到 0.389；当前领域质量仍需要独立人工标注数据继续改进。
 
 从项目开始至今的完整命令、结果与证据见
 [`execution-report.md`](execution-report.md)。
@@ -50,6 +51,7 @@ Python binding 和 builder/runtime 可执行文件均通过检查。
 | FP16 engine | 独立构建 LLM 与视觉 engine，保留哈希和 flow record | 两个 `succeeded` flow record |
 | FP16 runtime | 插件加载、权重流式预算、双 engine、CUDA graph 与 HTTP 服务 | server log 与 `/health` 200 |
 | 单图/20 样本 | 真实图片推理、20/20 严格 JSON 成功与同机遥测 | StudyReport、runtime summary、542 条 tegrastats |
+| Jetson LoRA | 合并模型 engine、3/3 smoke、20/20 Study 与同板质量对照 | `succeeded` flow、StudyReport、319 条 tegrastats |
 
 ## 3. Jetson 环境快照
 
@@ -246,7 +248,19 @@ LoRA 已使用 PS2.0 `training` 中 80 个独立来源组建立 64/16 的训练/
 固定基础模型生成严格 JSON 弱监督标签。RTX 4090 D 上 1 epoch 实测训练 6422528 个
 LoRA 参数，验证损失为 0.0845；冻结 20 样本的事件 micro-F1 从 Base 的 0.3500 提升到
 0.3889，风险准确率保持 35%。adapter 合并和 TensorRT Edge-LLM ONNX 导出均成功。
-当前 Jetson 不可达，因此 LoRA 合并模型的板端 engine 构建仍待连接恢复后执行。
+
+LoRA LLM ONNX 已传输到 Jetson 并通过归档与内部逐文件 SHA-256 校验。板端构建的
+weight-streaming LLM engine 为 3453786212 字节，构建 flow 状态为 `succeeded`；视觉
+engine 复用相同模型 revision 的既有 FP16 产物。图形桌面状态下 Base 与 LoRA 均在
+加载视觉 engine 时因 NvMap 连续内存分配失败；临时切换 headless、清空显示栈 NvMap
+客户端并执行内存 compaction 后，LoRA 双 engine、HTTP 服务与 CUDA graph 均成功加载。
+
+同一冻结 20 样本在 Jetson LoRA engine 上 20/20 完成、严格 JSON 有效率 100%，事件
+micro-F1 为 0.3889，风险准确率为 35%。端到端 p50/p90/p99 为 30.60/33.08/40.90 秒，
+RAM/swap 峰值为 7351/580 MB，GPU 利用率均值 98.20%，输入功耗均值 10.10 W，GPU
+峰温 61.94°C。相对板端 Base FP16，平均延迟下降 40.3%，但输出 token 总数同时减少
+41.8%，聚合输出速率从 1.480 降至 1.443 token/s，不能把该延迟差解释为运行时加速。
+原始证据保存在本机忽略目录 `reports/jetson-lora-20260813/`。
 
 INT4 AWQ 已完成服务器量化/ONNX 导出、Jetson engine 构建和 20 样本 Study。相对
 Edge-LLM FP16，平均端到端延迟加速 5.02x、engine 缩小 60.5%、RAM 峰值降低 31.6%；

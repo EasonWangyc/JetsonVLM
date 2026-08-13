@@ -58,22 +58,35 @@
   准确率仍为 35%，`visibility_occlusion` 仍全部漏检。
 - LoRA adapter 已合并为独立 checkpoint，合并模型复测质量指标与 adapter 一致；
   TensorRT Edge-LLM ONNX 导出 flow 状态为 `succeeded`。
+- LoRA 合并模型的 LLM ONNX 归档与内部 7 个文件已在 Jetson 复算 SHA-256；新的
+  FP16 weight-streaming LLM engine 构建 flow 状态为 `succeeded`，engine 为
+  `3453786212` 字节，SHA-256 为
+  `d38adc5d532615d7183a6b4aa8413020bd76a5991e49ecd51ca84d0442334224`。
+- Jetson LoRA runtime 在 headless 模式和内存 compaction 后完成双 engine 加载、HTTP
+  健康检查和同图连续 3/3 严格 JSON 验收；冻结 20 样本 20/20 完成，严格 JSON
+  有效率为 100%，风险准确率为 35%，事件 micro-F1 从板端 Base FP16 的 `0.3590`
+  提升至 `0.3889`。
+- Jetson LoRA 端到端 p50/p90/p99 为 `30.60/33.08/40.90 s`，聚合输出速率为
+  `1.44 token/s`；319 条遥测记录显示 RAM 峰值 `7351 MB`、swap 峰值 `580 MB`、
+  GPU 利用率均值 `98.20%`、输入功耗均值 `10.10 W`、GPU 峰温 `61.94°C`。本轮输出
+  token 总数比 Base 少 41.8%，因此延迟下降不能解释为 LoRA runtime 加速。
 - Jetson INT4 AWQ 20 样本 20/20 完成且 JSON 有效率为 100%；相对 Edge-LLM FP16，
   平均延迟获得 `5.02x` 加速、输出速率获得 `4.95x` 提升、engine 减少 `60.5%`、
   RAM 峰值降低 `31.6%`。但事件 micro-F1 从 `0.359` 降为 0，明确记录为校准质量退化。
 
-上述状态证明固定版本的 `ONNX -> FP16 engine -> Edge-LLM HTTP -> ParkSight Adapter ->
-InferenceRecord/StudyReport` 已在目标 Jetson 上真实执行，并完成 20/20 严格 JSON
-验收。它不证明模型已经满足业务质量要求：当前主要误差已经从输出格式转为风险等级
-和领域事件判断，需通过独立训练数据与 LoRA 改进。
+上述状态证明固定版本的 Base FP16、LoRA 合并模型和 INT4 均已完成相应的
+`ONNX -> engine -> Edge-LLM HTTP -> ParkSight Adapter -> InferenceRecord/StudyReport`
+板端实测。它不证明模型已经满足业务质量要求：当前主要误差已经从输出格式转为风险
+等级和领域事件判断，仍需扩大独立人工标注数据并修正 LoRA 与量化校准偏置。
 具体环境、命令和校验结果见 [`progress.md`](progress.md)。
 
 ## 尚未完成及证据边界
 
 - Jetson Transformers FP16 在早期板端 smoke test 中 OOM，尚无同一 20 样本集上的
   成功报告，因此当前不能计算 Edge-LLM 相对 Transformers 的同机加速比。
-- LoRA 合并模型的 LLM ONNX 已生成，但当前 Jetson SSH 不可达，因此新的 LoRA LLM
-  engine 尚未在板端构建和复测；服务器 LoRA 指标不能替代板端部署证据。
+- Base FP16/LoRA LLM engine 在图形桌面状态下均可能因 NvMap 无法分配约 811 MB
+  视觉 engine 内存而 OOM；本轮 LoRA 实测通过临时切换 `multi-user.target`、释放显示栈
+  NvMap 客户端并执行内存 compaction 完成。评测结束后已恢复图形桌面与系统服务。
 - 当前 LoRA 使用基础模型弱监督标注而非人工精标，样本标签偏向 `narrow_passage`，
   只能证明小规模领域适配与评测链路，不能外推为真实道路安全性能。
 - INT4 使用 128 条通用新闻文本校准，部署性能收益真实，但事件 F1 退化，不能作为

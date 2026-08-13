@@ -54,11 +54,12 @@ docs/             # 项目文档
 ## 当前实测结论
 
 固定 revision 的 Qwen3-VL-2B 已完成服务器 LoRA 训练、adapter 合并和 TensorRT
-Edge-LLM ONNX 导出，以及 Jetson 上 FP16/INT4 engine 构建与冻结 20 样本评测。
-服务器 LoRA 将事件 micro-F1 从 0.350 提升至 0.389；Jetson INT4 相比 FP16 的平均
-端到端延迟由 53.64 秒降至 10.69 秒、engine 体积降低 60.5%，但通用文本 AWQ 校准
-导致事件 micro-F1 退化为 0。项目将格式有效性、任务质量和部署性能分别记录，避免把
-runtime 成功等同于业务质量达标。详见 [docs/status.md](docs/status.md)。
+Edge-LLM ONNX 导出，以及 Jetson 上 Base FP16、LoRA 合并模型和 INT4 engine 构建与
+冻结 20 样本评测。Jetson Base FP16/LoRA 的严格 JSON 有效率均为 100%，事件
+micro-F1 从 0.359 提升至 0.389；INT4 相比 Base FP16 的平均端到端延迟由 53.64 秒
+降至 10.69 秒、engine 体积降低 60.5%，但通用文本 AWQ 校准导致事件 micro-F1
+退化为 0。项目将格式有效性、任务质量和部署性能分别记录，避免把 runtime 成功等同于
+业务质量达标。详见 [docs/status.md](docs/status.md)。
 
 ## 开始使用
 

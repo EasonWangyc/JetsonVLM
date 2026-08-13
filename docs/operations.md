@@ -93,14 +93,15 @@ PYTHONPATH=src python3 -m parksight_vlm.app.run_study \
 
 ## 4. LoRA、合并、导出与 engine 构建
 
-`configs/flows/*.example.json` 是 LoRA 等后续阶段的待审核模板。首个 Qwen3-VL
-FP16 部署已经提供两个固定配置：
+`configs/flows/*.example.json` 保留为新实验的待审核模板。Qwen3-VL Base FP16、LoRA、
+合并、INT4 和 Jetson engine 构建均已提供不带 `.example` 的实际配置；其中基础 FP16
+部署入口包括：
 
 - `configs/flows/export_qwen3_vl_2b_fp16.json`
 - `configs/flows/build_qwen3_vl_2b_fp16_engines.json`
 
 完整服务器导出、传输、Jetson runtime 编译、engine 构建、server 和验收命令见
-[`edgellm-deployment.md`](edgellm-deployment.md)。其他阶段先复制模板为不带
+[`edgellm-deployment.md`](edgellm-deployment.md)。新增实验先复制模板为不带
 `.example` 的实际配置，填入当前环境中已确认的命令、输入和输出，再做 dry-run：
 
 ```bash
