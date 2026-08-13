@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int: # 当 argv=None 时，argparse �
     parser.add_argument("--device-map", default="auto")
     parser.add_argument("--dtype", default="auto")
     parser.add_argument("--attn-implementation", default="sdpa")
+    parser.add_argument("--adapter-path")
     parser.add_argument("--edge-url", default="http://127.0.0.1:8000")
     args = parser.parse_args(argv)
 
@@ -61,6 +62,8 @@ def main(argv: list[str] | None = None) -> int: # 当 argv=None 时，argparse �
                 "attn_implementation": args.attn_implementation,
             }
         )
+        if args.adapter_path is not None:
+            options["adapter_path"] = args.adapter_path
     else:
         options["base_url"] = args.edge_url
     runtime = build_runtime(

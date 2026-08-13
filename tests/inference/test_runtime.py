@@ -84,6 +84,10 @@ class RuntimeTests(unittest.TestCase):
             __version__ = "2.9.1+cu126"
             cuda = FakeCuda()
 
+            @staticmethod
+            def ones(*args: object, **kwargs: object) -> object:
+                raise RuntimeError("no compatible kernel image")
+
         with self.assertRaisesRegex(
             RuntimeDependencyError,
             "does not include CUDA kernels for sm_87",

@@ -104,6 +104,27 @@ class AppTests(unittest.TestCase):
         with self.assertRaisesRegex(AppConfigError, "unsupported transformers options"):
             build_runtime(config, data_root=FIXTURE_IMAGE.parent)
 
+    @patch("parksight_vlm.app.runtime_factory.HuggingFaceQwen3VlBackend")
+    def test_build_runtime_passes_optional_lora_adapter_path(
+        self, backend_type: Mock
+    ) -> None:
+        config = RuntimeConfig(
+            backend="transformers",
+            backend_revision="5.9.0",
+            model_id="Qwen/Qwen3-VL-2B-Instruct",
+            model_revision="immutable-model-commit",
+            adapter_revision="adapter-v1",
+            precision="bf16+lora",
+            options={"adapter_path": "artifacts/adapters/adapter-v1"},
+        )
+
+        build_runtime(config, data_root=FIXTURE_IMAGE.parent)
+
+        self.assertEqual(
+            backend_type.call_args.kwargs["adapter_path"],
+            "artifacts/adapters/adapter-v1",
+        )
+
     def test_build_runtime_rejects_mutable_or_placeholder_revision(self) -> None:
         for revision in ("main", "replace-with-immutable-huggingface-commit"):
             config = RuntimeConfig(

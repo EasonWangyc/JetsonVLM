@@ -62,6 +62,24 @@ class ExternalFlowPlanTests(unittest.TestCase):
         self.assertIn("1024", build_command)
         self.assertNotIn("--enable-weight-streaming", build_command)
 
+    def test_loads_executable_qwen3_vl_lora_flows(self) -> None:
+        expected = {
+            "train_qwen3_vl_2b_lora_ps80_v1.json": "train_lora",
+            "merge_qwen3_vl_2b_lora_ps80_v1.json": "merge_lora",
+            "export_qwen3_vl_2b_lora_ps80_v1.json": "export_model",
+            "build_qwen3_vl_2b_lora_ps80_v1_llm_engine_i768_k1024.json": (
+                "build_engine"
+            ),
+        }
+
+        for filename, stage in expected.items():
+            with self.subTest(filename=filename):
+                plan = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT / "configs" / "flows" / filename
+                )
+                self.assertEqual(plan.stage, stage)
+                self.assertNotIn("replace-with-", " ".join(plan.command))
+
     def test_loads_pinned_qwen3_vl_fp16_deployment_flows(self) -> None:
         expected = {
             "export_qwen3_vl_2b_fp16.json": "export_model",

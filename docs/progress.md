@@ -242,15 +242,16 @@ NvMap/NVML 错误文本归因。
 
 ### 7.2 LoRA 与 INT4 状态
 
-当前 20 个样本全部属于冻结 `test` 集，不能直接拿来训练。LoRA 示例配置仍引用尚未
-建立的 `parking_risk_v1.jsonl` 训练/验证数据，训练与合并命令仍为占位符，因此本轮
-没有执行 LoRA 或生成 adapter。下一步应先从独立来源组建立 train/validation 数据，
-重点监督数组字段、六类领域事件和安全建议，再在 GPU 服务器运行 LoRA 并回到同一
-冻结 test 集复测。
+LoRA 已使用 PS2.0 `training` 中 80 个独立来源组建立 64/16 的训练/验证划分，并使用
+固定基础模型生成严格 JSON 弱监督标签。RTX 4090 D 上 1 epoch 实测训练 6422528 个
+LoRA 参数，验证损失为 0.0845；冻结 20 样本的事件 micro-F1 从 Base 的 0.3500 提升到
+0.3889，风险准确率保持 35%。adapter 合并和 TensorRT Edge-LLM ONNX 导出均成功。
+当前 Jetson 不可达，因此 LoRA 合并模型的板端 engine 构建仍待连接恢复后执行。
 
-INT4 尚无校准集、量化配置或 engine。FP16 运行已经证明 0-byte 权重驻留预算能在
-8 GB Jetson 上运行，但代价是 p50 约 50.75 秒；INT4 的首要目标是降低权重与 scratch
-压力、提高 GPU 驻留比例和 token 吞吐，而不是把尚未执行的计划写成完成结果。
+INT4 AWQ 已完成服务器量化/ONNX 导出、Jetson engine 构建和 20 样本 Study。相对
+Edge-LLM FP16，平均端到端延迟加速 5.02x、engine 缩小 60.5%、RAM 峰值降低 31.6%；
+但通用文本校准使事件 micro-F1 从 0.359 退化到 0，结果被保留为部署成功但质量不合格
+的实验事实。
 
 同机加速比还需要补齐 Jetson Transformers FP16 的同一 20 样本报告；早期 OOM 记录
 保留为明确实验结果，但不能用服务器 Transformers 延迟替代板端基线。

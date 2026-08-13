@@ -38,7 +38,7 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
     if config.backend == "transformers":
         _require_allowed_options(
             config.options,
-            {"device_map", "dtype", "attn_implementation"},
+            {"device_map", "dtype", "attn_implementation", "adapter_path"},
             "transformers",
         )
         backend = HuggingFaceQwen3VlBackend(
@@ -48,6 +48,11 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
             dtype=_option_text(config.options, "dtype", "auto"),
             attn_implementation=_option_text(
                 config.options, "attn_implementation", "sdpa"
+            ),
+            adapter_path=(
+                _option_text(config.options, "adapter_path", "")
+                if "adapter_path" in config.options
+                else None
             ),
         )
         return TransformersRuntime(

@@ -1,0 +1,9 @@
+\projectheader{ParkSight-VLM：Jetson 端侧多模态泊车风险分析系统}
+{Qwen3-VL / LoRA / TensorRT Edge-LLM}{2026.05--2026.08}
+\begin{itemize}
+  \item \textbf{多模态任务链路}：面向低速泊车环视图像，构建 \texttt{ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport} 推理评测链路，输出包含风险等级、六类风险事件、可见证据与驾驶建议的严格 \textbf{JSON}，统一记录模型版本、运行时配置、时延及失败状态
+  \item \textbf{LoRA 领域适配}：按连续采集来源组隔离训练、验证和冻结测试集，基于 80 张独立泊车图像构造弱监督 SFT 数据；在 RTX 4090 D 上对 \textbf{Qwen3-VL-2B-Instruct} 语言 attention 注入 LoRA，仅训练 \textbf{642 万参数（0.301\%）}，峰值显存 \textbf{5.25 GiB}，完成 adapter 合并与 TensorRT Edge-LLM ONNX 导出
+  \item \textbf{质量评测}：在相同 20 张冻结测试集上完成 Base、LoRA adapter 和合并模型对照，严格 JSON 有效率保持 \textbf{100\%}，事件 micro-F1 由 \textbf{0.350 提升至 0.389}，并将车辆侵入事件假阳性由 \textbf{6 降至 0}；通过分类错误分析定位狭窄通道偏置与遮挡事件漏检
+  \item \textbf{TensorRT 量化部署}：打通 \textbf{ONNX -> TensorRT engine -> Jetson Orin Nano} 部署链路，完成 LLM backbone \textbf{W4A16 AWQ} 与 FP16 同机对照；INT4 engine 体积降低 \textbf{60.5\%}、峰值内存降低 \textbf{31.6\%}，平均端到端延迟由 \textbf{53.64 s} 降至 \textbf{10.69 s}，吞吐由 \textbf{1.48} 提升至 \textbf{7.33 tokens/s}
+  \item \textbf{工程与性能分析}：解决 JetPack/L4T、CUDA 架构、TensorRT plugin、KV Cache、context 预分配及 8 GB 统一内存 OOM 问题；采集 p50/p90/p99 延迟、显存、swap、GPU 利用率、功耗和温度，并识别通用文本 AWQ 校准导致领域事件 F1 退化的问题
+\end{itemize}

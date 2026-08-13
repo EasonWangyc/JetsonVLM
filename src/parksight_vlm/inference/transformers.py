@@ -36,12 +36,14 @@ class HuggingFaceQwen3VlBackend:
         device_map: str = "auto",
         dtype: str = "auto",
         attn_implementation: str = "sdpa",
+        adapter_path: str | None = None,
     ) -> None:
         self._model_id = model_id
         self._model_revision = model_revision
         self._device_map = device_map
         self._dtype = dtype
         self._attn_implementation = attn_implementation
+        self._adapter_path = adapter_path
         self._processor = None
         self._model = None # 构造时不立即加载模型
         self._torch = None
@@ -133,6 +135,17 @@ class HuggingFaceQwen3VlBackend:
             dtype=self._dtype,
             attn_implementation=self._attn_implementation,
         )
+        if self._adapter_path is not None:
+            try:
+                from peft import PeftModel
+            except ImportError as error:
+                raise RuntimeDependencyError(
+                    "peft is required when a Transformers adapter_path is configured"
+                ) from error
+            self._model = PeftModel.from_pretrained(
+                self._model,
+                self._adapter_path,
+            )
         self._model.eval()
 
 
@@ -165,12 +178,20 @@ def _require_cuda_architecture(torch_module: Any) -> None:
     required_architecture = f"sm_{major}{minor}"
     supported_architectures = tuple(torch_module.cuda.get_arch_list())
     if supported_architectures and required_architecture not in supported_architectures:
-        supported_text = ", ".join(supported_architectures)
-        raise RuntimeDependencyError(
-            f"installed torch {torch_module.__version__} does not include CUDA "
-            f"kernels for {required_architecture}; supported architectures: "
-            f"{supported_text}"
-        )
+        # 桌面 GPU 可以通过兼容 SASS/PTX 正常运行，即使 get_arch_list()
+        # 没有逐项列出设备的小版本（例如 Ada sm_89 使用 sm_86 兼容代码）。
+        # 因此用真实 CUDA kernel 作为最终判据；Jetson 不兼容 wheel 仍会在此失败。
+        try:
+            probe = torch_module.ones(1, device="cuda")
+            probe.add_(1)
+            torch_module.cuda.synchronize()
+        except Exception as error:
+            supported_text = ", ".join(supported_architectures)
+            raise RuntimeDependencyError(
+                f"installed torch {torch_module.__version__} does not include CUDA "
+                f"kernels for {required_architecture}; supported architectures: "
+                f"{supported_text}"
+            ) from error
 
 
 class TransformersRuntime(RiskRuntime):

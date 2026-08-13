@@ -1,7 +1,7 @@
 # JetsonVLM
 
-基于 Jetson Orin Nano 与 TensorRT Edge-LLM 的 Qwen3-VL-2B 泊车风险理解、部署与
-评测项目。LoRA 和 INT4 是后续实验阶段，不作为当前已完成能力。
+基于 Jetson Orin Nano 与 TensorRT Edge-LLM 的 Qwen3-VL-2B 泊车风险理解、LoRA
+领域适配、INT4 AWQ 量化部署与评测项目。
 
 ```text
 ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
@@ -53,11 +53,12 @@ docs/             # 项目文档
 
 ## 当前实测结论
 
-固定 revision 的 Qwen3-VL-2B 已完成服务器 ONNX 导出，以及 Jetson 上 LLM/visual
-FP16 engine 构建、双 engine HTTP 服务、真实单图和冻结 20 样本推理。20/20 样本
-完成后端执行，但严格 JSON 有效率为 0/20；端到端 p50 为 41.76 秒，平均板端输入
-功耗为 10.11 W。结果证明完整部署链路成立，也表明输出格式与领域枚举需要通过独立
-训练数据和 LoRA 继续修正。详见 [docs/status.md](docs/status.md)。
+固定 revision 的 Qwen3-VL-2B 已完成服务器 LoRA 训练、adapter 合并和 TensorRT
+Edge-LLM ONNX 导出，以及 Jetson 上 FP16/INT4 engine 构建与冻结 20 样本评测。
+服务器 LoRA 将事件 micro-F1 从 0.350 提升至 0.389；Jetson INT4 相比 FP16 的平均
+端到端延迟由 53.64 秒降至 10.69 秒、engine 体积降低 60.5%，但通用文本 AWQ 校准
+导致事件 micro-F1 退化为 0。项目将格式有效性、任务质量和部署性能分别记录，避免把
+runtime 成功等同于业务质量达标。详见 [docs/status.md](docs/status.md)。
 
 ## 开始使用
 

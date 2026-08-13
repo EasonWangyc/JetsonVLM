@@ -48,6 +48,19 @@
 - 质量结果为风险等级准确率 `35%`、事件 micro-F1 `0.359`、不安全建议率 `0%`。
 - 542 条 `tegrastats` 记录显示 GPU 利用率均值 `97.39%`、RAM 峰值 `7418 MB`、
   swap 峰值 `1904 MB`、板端输入功耗均值 `10.05 W`、GPU 峰值温度 `65.03°C`。
+- 从 PS2.0 `training` 划分 64 个训练来源组和 16 个验证来源组，使用固定基础模型生成
+  80/80 通过严格 JSON 校验的弱监督样本；与 20 张 pilot 冻结测试集零重叠。
+- RTX 4090 D 已完成 Qwen3-VL-2B LoRA：语言 attention 的 `q/k/v/o_proj` 共
+  `6422528` 个可训练参数，占总参数 `0.301%`；1 epoch、16 个 optimizer step，
+  验证损失 `0.0845`，峰值 CUDA 显存 `5.25 GiB`，训练用时 `21.54 s`。
+- 同一服务器冻结测试集上，Base/LoRA 严格 JSON 均为 20/20，事件 micro-F1 从
+  `0.3500` 提升至 `0.3889`，`vehicle_near_maneuver_path` 假阳性由 6 降为 0；风险
+  准确率仍为 35%，`visibility_occlusion` 仍全部漏检。
+- LoRA adapter 已合并为独立 checkpoint，合并模型复测质量指标与 adapter 一致；
+  TensorRT Edge-LLM ONNX 导出 flow 状态为 `succeeded`。
+- Jetson INT4 AWQ 20 样本 20/20 完成且 JSON 有效率为 100%；相对 Edge-LLM FP16，
+  平均延迟获得 `5.02x` 加速、输出速率获得 `4.95x` 提升、engine 减少 `60.5%`、
+  RAM 峰值降低 `31.6%`。但事件 micro-F1 从 `0.359` 降为 0，明确记录为校准质量退化。
 
 上述状态证明固定版本的 `ONNX -> FP16 engine -> Edge-LLM HTTP -> ParkSight Adapter ->
 InferenceRecord/StudyReport` 已在目标 Jetson 上真实执行，并完成 20/20 严格 JSON
@@ -59,12 +72,12 @@ InferenceRecord/StudyReport` 已在目标 Jetson 上真实执行，并完成 20/
 
 - Jetson Transformers FP16 在早期板端 smoke test 中 OOM，尚无同一 20 样本集上的
   成功报告，因此当前不能计算 Edge-LLM 相对 Transformers 的同机加速比。
-- 服务器 Transformers 正确性参考尚未形成同一 `ps20_pilot_v1` 的完整 StudyReport。
-- 当前数据只有 20 个冻结 `test` 样本，没有可用于训练的 `train`/`validation` 划分；
-  LoRA 配置仍引用不存在的 `parking_risk_v1.jsonl`，训练命令仍是审核占位符。因此
-  LoRA、合并模型及复测均明确记录为未执行。
-- INT4 尚无经过审核的量化方法、校准集、构建配置或 engine；当前只有 FP16 的内存、
-  时延和输出格式误差证据，不能声称 INT4 已完成。
+- LoRA 合并模型的 LLM ONNX 已生成，但当前 Jetson SSH 不可达，因此新的 LoRA LLM
+  engine 尚未在板端构建和复测；服务器 LoRA 指标不能替代板端部署证据。
+- 当前 LoRA 使用基础模型弱监督标注而非人工精标，样本标签偏向 `narrow_passage`，
+  只能证明小规模领域适配与评测链路，不能外推为真实道路安全性能。
+- INT4 使用 128 条通用新闻文本校准，部署性能收益真实，但事件 F1 退化，不能作为
+  最终质量版本；后续需使用冻结测试集之外的泊车图文校准集。
 - 临时 `/home/ubuntu/parksight-build.swap` 已启用但未写入 `fstab`；`Device or resource
   busy` 表示重复执行 `swapon`，不是启用失败。
 
