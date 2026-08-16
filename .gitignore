@@ -19,6 +19,3 @@ models/
 # Jetson and profiler outputs
 tegrastats*.log
 nsys-rep/
-
-# Personal record
-docs/record.md
