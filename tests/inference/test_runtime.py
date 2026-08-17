@@ -21,6 +21,8 @@ from parksight_vlm.inference import (
     TransformersRuntime,
 )
 from parksight_vlm.inference.transformers import (
+    _ForwardPhaseProfiler,
+    _find_profile_module,
     _require_cuda_architecture,
     build_qwen3_vl_chat_messages,
 )
@@ -47,6 +49,63 @@ class StaticBackend:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_forward_phase_profiler_separates_prefill_and_decode(self) -> None:
+        class Handle:
+            def remove(self) -> None:
+                return None
+
+        class Module:
+            def __init__(self) -> None:
+                self.before: list[object] = []
+                self.after: list[object] = []
+
+            def register_forward_pre_hook(self, callback: object) -> Handle:
+                self.before.append(callback)
+                return Handle()
+
+            def register_forward_hook(self, callback: object) -> Handle:
+                self.after.append(callback)
+                return Handle()
+
+            def run(self) -> None:
+                for callback in self.before:
+                    callback(self, ())  # type: ignore[operator]
+                for callback in self.after:
+                    callback(self, (), None)  # type: ignore[operator]
+
+        class Model:
+            def __init__(self) -> None:
+                self.visual = Module()
+                self.language = Module()
+
+            def named_modules(self) -> list[tuple[str, Module]]:
+                return [
+                    ("model.visual", self.visual),
+                    ("model.language_model", self.language),
+                ]
+
+        class Cuda:
+            @staticmethod
+            def is_available() -> bool:
+                return False
+
+        class Torch:
+            cuda = Cuda()
+
+        model = Model()
+        with _ForwardPhaseProfiler(model, Torch()) as profiler:
+            model.visual.run()
+            model.language.run()
+            model.language.run()
+
+        self.assertIsNotNone(profiler.vision_encode_ms)
+        self.assertIsNotNone(profiler.prefill_ms)
+        self.assertIsNotNone(profiler.decode_ms)
+        self.assertIs(
+            _find_profile_module(dict(model.named_modules()), "visual"),
+            model.visual,
+        )
+
     def test_qwen3_vl_messages_use_typed_content_items(self) -> None:
         image = object()
 

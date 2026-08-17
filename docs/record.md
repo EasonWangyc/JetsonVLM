@@ -3301,3 +3301,575 @@ docs/resume-project.tex
 验收 > 分阶段 profiling > 有证据的 CUDA 预处理/内存优化。若以当前版本投递简历，
 应采用 `docs/resume-project.tex` 中的客观描述，并能解释 INT4 质量退化、LoRA 短输出
 与运行时加速的区别，以及 headless/compaction 解决的 NvMap 连续内存问题。
+
+## 27. 2026-08-17：候选标注、独立校准集与 Transformers 分阶段 profiling
+
+### 27.1 本轮目标与 GPU 服务器需求
+
+本轮只处理两项工作：
+
+1. 整理 PS2.0 的 80 条开发样本，修正 teacher 标签偏置并划出独立 INT4 校准集；
+2. 在 Jetson 补齐 Transformers FP16 的阶段 profiling 和当前可运行边界。
+
+这两项不需要启动 4090 服务器。4090 只在使用新标签重新训练 LoRA、使用新校准集重新
+量化、重新导出 ONNX 时需要。
+
+### 27.2 弱监督标签盘点
+
+原始 teacher 文件为：
+
+```text
+reports/autodl-lora-20260813/ps80_teacher_v1.jsonl
+```
+
+盘点得到 80 个唯一 `source_group_id`，原划分为 64 train / 16 validation。标签分布
+存在明显偏置：80/80 的 `risk_level` 都是 `low`，65 条包含 `narrow_passage`，只有
+19 条包含 `vehicle_near_maneuver_path`。
+
+使用以下命令生成五张 4x4 联系表：
+
+```powershell
+& '<BUNDLED_PYTHON>' scripts\build_label_review_sheets.py `
+  --records data\manifests\ps80_development_v1.jsonl `
+  --image-root data\processed\lora\source_images `
+  --output-directory reports\label-review-20260817
+```
+
+本轮逐图形成 `data/annotations/ps80_reviewed_v1.jsonl`。标签来源明确记为
+`codex_visual_review_v1_single_pass`：它用于修正明显 teacher 偏置和建立下一轮实验
+入口，不是人工双人金标，也不能描述为真实道路安全能力已经得到人工验收。联系表保留
+用于后续人工终审。
+
+相对 teacher 的字段变化：
+
+| 项目 | 数量 |
+| --- | ---: |
+| 风险等级变化 | 33/80 |
+| 事件集合变化 | 77/80 |
+| 任意 assessment 字段变化 | 80/80 |
+
+### 27.3 无泄漏拆分与校准记录
+
+校准选择固定在：
+
+```text
+configs/data/ps16_int4_calibration_v1.json
+```
+
+它从原 64 条 train 候选中按低风险、车辆近场、固定障碍和可见性类别选择 16 个来源
+组。生成命令：
+
+```powershell
+$env:PYTHONPATH='src'
+& '.\.venv\Scripts\python.exe' scripts\prepare_reviewed_lora_dataset.py `
+  --development-manifest data\manifests\ps80_development_v1.jsonl `
+  --weak-annotations data\annotations\ps80_teacher_v1.jsonl `
+  --annotations data\annotations\ps80_reviewed_v1.jsonl `
+  --calibration-config configs\data\ps16_int4_calibration_v1.json `
+  --image-root data\processed\lora\source_images `
+  --workload configs\workloads\parking_risk_v1.json `
+  --frozen-test-manifest data\manifests\ps20_pilot_v1.jsonl `
+  --lora-output data\processed\lora\ps64_reviewed_v1.jsonl `
+  --calibration-output data\processed\calibration\ps16_int4_calibration_v1.jsonl `
+  --summary-output reports\data\ps80_reviewed_v1_summary.json
+```
+
+结果：
+
+| 划分 | 样本数 |
+| --- | ---: |
+| LoRA train | 48 |
+| LoRA validation | 16 |
+| INT4 calibration | 16 |
+| 合计 | 80 |
+
+校验结果：LoRA 与 calibration 交集为 0，开发来源组与冻结 20 样本 test 的交集为 0。
+未来 LoRA 入口为
+`configs/training/qwen3_vl_2b_lora_ps64_reviewed_v1.json`。
+
+INT4 当前只量化 LLM backbone，视觉 engine 保持 FP16。因此 calibration JSONL 的
+`text` 字段使用固定泊车 system prompt、完整用户约束和结构化答案覆盖领域 token
+分布；图片路径和 assessment 同时保留用于追溯。这是泊车领域语言骨干校准，不应称为
+视觉编码器量化校准。现有 INT4 engine 仍来自旧的 128 条新闻文本，尚未用新集重新
+量化。
+
+### 27.4 profiling 代码与验证
+
+`HuggingFaceQwen3VlBackend` 新增可选 `profile_stages`。开启时在上游模型的
+`visual` 和 `language_model` 模块安装 forward hook：
+
+- `visual` forward 总时延记为 `vision_encode_ms`；
+- 语言模型第一次 forward 记为 `prefill_ms`；
+- 后续语言模型 forward 之和记为 `decode_ms`；
+- 找不到模块时字段保持 `null`，不推测数据。
+
+hook 边界调用 `torch.cuda.synchronize()`，因此该模式会改变绝对时延，只能作为阶段
+占比诊断。独立配置为：
+
+```text
+configs/studies/jetson_transformers_fp16_profile_ps20_pilot.json
+```
+
+本机验证：
+
+```powershell
+$env:PYTHONPATH='src'
+& '.\.venv\Scripts\python.exe' -m unittest discover -s tests
+git diff --check
+```
+
+结果为 46 个测试全部通过，`git diff --check` 通过。
+
+### 27.5 Jetson 执行命令
+
+先确认当前状态：graphical target 和 display manager 均为 active，8 GiB 文件 swap 与
+约 3.7 GiB zram 均启用，固定模型 commit 缓存存在。Python 导入必须带 cuDSS/CUDA
+动态库路径：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+LD_LIBRARY_PATH=/home/ubuntu/JetsonVLM/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib:/usr/local/cuda/lib64 \
+  .venv-jetson/bin/python -c 'import torch, transformers; print(torch.__version__, transformers.__version__, torch.cuda.is_available())'
+```
+
+实测为 `torch 2.9.1`、`transformers 4.57.6`、CUDA 可用。按板端不更新 Git、只同步
+修改文件的约定，SCP 同步 `transformers.py`、`runtime_factory.py` 和 profiling study
+配置。运行命令：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+mkdir -p reports/jetson-transformers-profile-20260817
+tegrastats --interval 1000 \
+  > reports/jetson-transformers-profile-20260817/tegrastats.log 2>&1 &
+TEGRSTATS_PID=$!
+
+LD_LIBRARY_PATH=/home/ubuntu/JetsonVLM/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib:/usr/local/cuda/lib64 \
+HF_HUB_OFFLINE=1 \
+TRANSFORMERS_OFFLINE=1 \
+PYTHONPATH=src \
+timeout 1200s \
+.venv-jetson/bin/python -m parksight_vlm.app.run_study \
+  --config configs/studies/jetson_transformers_fp16_profile_ps20_pilot.json \
+  > reports/jetson-transformers-profile-20260817/stdout.log \
+  2> reports/jetson-transformers-profile-20260817/stderr.log
+
+kill "$TEGRSTATS_PID"
+```
+
+退出码为 0。运行完成后单独加载相同模型并打印 `hf_device_map`，结果为：
+
+```text
+Counter({'0': 1})
+{'': 0}
+```
+
+因此最终模型完整映射到 `cuda:0`。加载过程出现的 meta/CPU offload 警告不能单独作为
+最终 offload 结论。
+
+### 27.6 20 样本 profiling 结果
+
+后端完成和严格 JSON 均为 20/20，失败汇总为空。阶段时延：
+
+| 阶段 | p50 | p90 | p99 |
+| --- | ---: | ---: | ---: |
+| preprocess | 27.60 ms | 33.86 ms | 160.35 ms |
+| vision encode | 225.11 ms | 232.16 ms | 747.24 ms |
+| prefill | 626.51 ms | 633.86 ms | 802.51 ms |
+| decode | 17.04 s | 26.64 s | 27.56 s |
+| instrumented generate | 19.24 s | 29.82 s | 30.75 s |
+| instrumented end-to-end | 19.27 s | 29.86 s | 45.12 s |
+
+decode p50 约占插桩 generate p50 的 88.5%，单输出 token 的 decode 中位耗时约
+226.3 ms。预处理 p50 仅 27.6 ms，当前主要瓶颈是 LLM decode，不是 Pillow resize 或
+Processor 输入构造。未插桩基线仍使用既有报告中的端到端 p50 9.38 s；不能拿插桩后的
+19.27 s 计算运行时加速比。
+
+451 条 tegrastats 的摘要：
+
+| 指标 | 结果 |
+| --- | ---: |
+| RAM 峰值 | 7302 / 7619 MB |
+| swap 峰值 | 1174 / 12002 MB |
+| 最小 lfb | 1 x 2 MB |
+| GPU 利用率均值 / 峰值 | 58.55% / 99% |
+| 输入功耗均值 / 峰值 | 8.77 / 12.12 W |
+| GPU 温度均值 / 峰值 | 57.91 / 60.97 C |
+
+当前 R36.5.0、graphical target、swap 已启用的配置在极小连续内存余量下仍完成了完整
+FP16 study，属于明确的“可运行但余量很小”边界。早期 R36.4.7/旧环境中模型加载阶段
+的 NvMap error 12、GR3D 0% 和 OOM 记录仍作为失败边界保留。swap 可以缓解可换页
+内存压力，但不能保证 NvMap 所需连续物理块，因此不能仅凭 `free -h` 或 swap 开关
+解释 OOM。
+
+本轮原始证据保存在忽略目录：
+
+```text
+reports/label-review-20260817/
+reports/data/ps80_reviewed_v1_summary.json
+reports/jetson-transformers-profile-20260817/study.json
+reports/jetson-transformers-profile-20260817/tegrastats.log
+reports/jetson-transformers-profile-20260817/summary.json
+reports/jetson-transformers-profile-20260817/stdout.log
+reports/jetson-transformers-profile-20260817/stderr.log
+```
+
+## 28. 2026-08-17：复核数据 LoRA 重训与领域 INT4 端到端复测
+
+### 28.1 本轮范围与结论
+
+本轮在一台 RTX 4090 D 服务器上完成两项计划工作，并在同一 Jetson Orin Nano 上
+完成最终部署复测：
+
+1. 使用 `ps64_reviewed_v1` 重新训练、评测并合并 LoRA；
+2. 使用独立的 `ps16_int4_calibration_v1` 重新执行 LLM backbone INT4 AWQ、ONNX
+   导出、Jetson engine 构建和冻结 20 样本 study。
+
+两条流程均从配置入口运行到实际产物与报告，部署链路完整。但质量结果是混合/负向：
+
+- 经过非 low 样本过采样的 LoRA adapter 达到 20/20 严格 JSON、风险准确率 50%、事件
+  micro-F1 0.182；风险准确率高于旧 LoRA，但事件 F1 低于旧弱监督 LoRA 的 0.389；
+- 合并 checkpoint 的同口径结果为风险准确率 45%、事件 micro-F1 0.100，和 adapter
+  在线加载结果并不完全相同；
+- 新领域校准 INT4 在 Jetson 上 20/20 后端完成，但严格 JSON 仅 4/20。16 条失败输出
+  基本都是被 Markdown `json` 代码围栏包裹的完整 JSON，违反了严格输出协议；
+- 新 INT4 的速度与旧通用文本校准 INT4 基本相同，没有形成新的性能收益，且格式遵循
+  明显退化。因此它是“量化部署成功、质量验收失败”的负向实验，不替换当前已保留的
+  旧 INT4 对照结果。
+
+复核标注来源仍为 `codex_visual_review_v1_single_pass`，不是人工双人金标。本轮结果只能
+用于验证训练、量化和部署方法及发现数据问题，不能解释为泊车安全能力已经完成验收。
+
+### 28.2 新 GPU 服务器环境
+
+首先进行只读环境检查：
+
+```bash
+. /etc/os-release
+printf '%s\n' "$PRETTY_NAME"
+uname -m
+nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap \
+  --format=csv,noheader
+python3 -V
+git --version
+df -h /root/autodl-tmp
+free -h
+python3 -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))'
+```
+
+实测环境为 Ubuntu 22.04.5 x86_64、RTX 4090 D 24564 MiB、驱动 595.71.05、系统
+Python 3.12.3、PyTorch 2.8.0+cu128，CUDA 可用。项目位于：
+
+```text
+/root/autodl-tmp/JetsonVLM
+```
+
+训练环境与量化工具环境相互隔离：
+
+```bash
+cd /root/autodl-tmp/JetsonVLM
+python3 -m venv --system-site-packages .venv-train
+PIP_CACHE_DIR=/root/autodl-tmp/pip-cache \
+  .venv-train/bin/python -m pip install --upgrade pip
+PIP_CACHE_DIR=/root/autodl-tmp/pip-cache \
+  .venv-train/bin/python -m pip install \
+  'transformers==5.9.0' 'peft==0.18.0' 'accelerate==1.10.1' \
+  'safetensors>=0.6.2'
+
+cd /root/autodl-tmp
+git clone https://github.com/NVIDIA/TensorRT-Edge-LLM.git
+cd TensorRT-Edge-LLM
+git checkout 7f061f21f0a581ba234a1e233c9315b89d8e47d6
+/root/miniconda3/bin/python -m venv .venv-int4
+.venv-int4/bin/python -m pip install -e '.[tools]'
+.venv-int4/bin/python -m pip check
+```
+
+最终版本：
+
+| 环境 | 关键包 |
+| --- | --- |
+| `.venv-train` | torch 2.8.0+cu128、transformers 5.9.0、peft 0.18.0、accelerate 1.10.1 |
+| `.venv-int4` | torch 2.12.0+cu130、torchvision 0.27.0、transformers 5.9.0、modelopt 0.44.0、datasets 4.8.5 |
+
+量化工具仓库严格固定在
+`7f061f21f0a581ba234a1e233c9315b89d8e47d6`，`pip check` 通过。
+
+### 28.3 固定模型下载与校验
+
+基础模型仍使用同一不可变 revision：
+
+```text
+Qwen/Qwen3-VL-2B-Instruct
+89644892e4d85e24eaac8bacfd4f463576704203
+```
+
+标准下载入口为：
+
+```bash
+cd /root/autodl-tmp/JetsonVLM
+mkdir -p models /root/autodl-tmp/hf-home
+HF_HOME=/root/autodl-tmp/hf-home \
+  .venv-train/bin/hf download Qwen/Qwen3-VL-2B-Instruct \
+  --revision 89644892e4d85e24eaac8bacfd4f463576704203 \
+  --local-dir models/Qwen3-VL-2B-Instruct-89644892
+```
+
+本次 Hugging Face 大权重连接曾停滞，因此安装 `aria2` 并对同一固定 revision 的权重
+URL 断点续传。最终校验结果：
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `model.safetensors` | 4255140312 | `7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0` |
+
+下载恢复手段不改变模型身份；后续训练、量化和导出均读取该固定目录。
+
+### 28.4 LoRA 训练入口与类别采样修正
+
+新增/使用的配置入口：
+
+```text
+configs/training/qwen3_vl_2b_lora_ps64_reviewed_v1.json
+configs/flows/train_qwen3_vl_2b_lora_ps64_reviewed_v1.json
+configs/flows/merge_qwen3_vl_2b_lora_ps64_reviewed_v1.json
+configs/studies/server_transformers_lora_ps64_reviewed_v1_ps20_pilot.json
+configs/studies/server_transformers_merged_lora_ps64_reviewed_v1_ps20_pilot.json
+```
+
+训练脚本增加确定性的 `non_low_oversampling_factor`。它只复制 train split 中风险等级
+不是 `low` 的记录，不改变 validation，也不会把 calibration/test 数据引入训练。配置
+使用 factor 2，将 48 个唯一训练样本扩展为 63 个有效训练记录。
+
+服务器执行命令：
+
+```bash
+cd /root/autodl-tmp/JetsonVLM
+export PATH=/root/autodl-tmp/JetsonVLM/.venv-train/bin:$PATH
+export PYTHONPATH=/root/autodl-tmp/JetsonVLM/src
+
+python scripts/train_lora.py \
+  --config configs/flows/train_qwen3_vl_2b_lora_ps64_reviewed_v1.json
+python scripts/train_lora.py \
+  --config configs/flows/train_qwen3_vl_2b_lora_ps64_reviewed_v1.json \
+  --execute
+
+python -m parksight_vlm.app.run_study \
+  --config configs/studies/server_transformers_lora_ps64_reviewed_v1_ps20_pilot.json
+
+python scripts/merge_lora.py \
+  --config configs/flows/merge_qwen3_vl_2b_lora_ps64_reviewed_v1.json \
+  --execute
+python -m parksight_vlm.app.run_study \
+  --config configs/studies/server_transformers_merged_lora_ps64_reviewed_v1_ps20_pilot.json
+```
+
+为避免只观察训练损失，本轮保留三轮对照：
+
+| 训练版本 | 唯一/有效 train | epoch / step | validation loss | 用时 | 峰值 CUDA |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| e1 | 48/48 | 1 / 12 | 1.2645 | 21.65 s | 5.249 GiB |
+| e3 未平衡 | 48/48 | 3 / 36 | 0.8501 | 57.26 s | 5.273 GiB |
+| e3、non-low x2 | 48/63 | 3 / 48 | 0.7220 | 80.84 s | 5.273 GiB |
+
+冻结 20 样本结果：
+
+| 模型状态 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 主要现象 |
+| --- | ---: | ---: | ---: | --- |
+| e1 adapter | 45% | 10% | 0 | 11 条输出在 256 token 处截断 |
+| e3 未平衡 adapter | 100% | 35% | 0 | 20 条全部预测为 low，发生类别塌缩 |
+| e3、non-low x2 adapter | 100% | 50% | 0.182 | 17 low / 3 medium，恢复少量事件预测 |
+| e3、non-low x2 merged | 100% | 45% | 0.100 | 合并后数值/生成结果与在线 adapter 不完全相同 |
+
+最终 adapter 仅训练语言 attention 的 `q/k/v/o_proj`，可训练参数为 6422528，占
+2133954560 总参数的 0.301%。产物校验：
+
+| 产物 | SHA-256 |
+| --- | --- |
+| `adapter_model.safetensors` | `487b6a468a1372aa5bca610bfa7e1e508bd94b69d182a665019565ea6362886a` |
+| merged `model.safetensors` | `9d12fa537bb34afd12b72a849fda0919d5df37c74fffd028f4919d78c3d496fe` |
+
+这组数据说明 validation loss 下降不能替代冻结测试集质量评测。过采样缓解了全 low
+塌缩，但事件识别仍弱于旧 LoRA；当前瓶颈首先是候选标签规模与质量，而不是继续增加
+epoch。
+
+### 28.5 领域 INT4 AWQ 量化与 ONNX 导出
+
+新增 `scripts/quantize_qwen3_vl_int4_awq_domain.py`，将校准 JSONL 的 `text` 字段作为
+TensorRT Edge-LLM `quantize_and_export` 的自定义 callable dataset，并在运行前验证
+工具源码 commit。量化边界固定为：
+
+- LLM backbone：W4A16 AWQ，group size 128；
+- visual：FP16，不量化；
+- `lm_head`：FP16，不量化；
+- KV cache：不量化。
+
+执行命令：
+
+```bash
+cd /root/autodl-tmp/JetsonVLM
+export PATH=/root/autodl-tmp/TensorRT-Edge-LLM/.venv-int4/bin:$PATH
+export PYTHONPATH=/root/autodl-tmp/JetsonVLM/src
+
+python scripts/quantize_model.py \
+  --config configs/flows/quantize_qwen3_vl_2b_int4_awq_ps16_v1.json
+python scripts/quantize_model.py \
+  --config configs/flows/quantize_qwen3_vl_2b_int4_awq_ps16_v1.json \
+  --execute
+
+python scripts/export_model.py \
+  --config configs/flows/export_qwen3_vl_2b_int4_awq_ps16_v1.json
+python scripts/export_model.py \
+  --config configs/flows/export_qwen3_vl_2b_int4_awq_ps16_v1.json \
+  --execute
+```
+
+校准集身份与结果：
+
+| 项目 | 结果 |
+| --- | --- |
+| calibration rows | 16 |
+| calibration SHA-256 | `0949bfb7649f74a0a537781e5e46363d9b76cb3b046ecf4b91b6cd02171f77f3` |
+| tokenizer 长度 min/max/mean | 416 / 449 / 425.81 |
+| 超过 512 token | 0 |
+| 量化耗时 | 约 69.0 s（内部量化阶段约 63.6 s） |
+| 量化权重字节数 | 2185741496 |
+| 量化权重 SHA-256 | `4d431087963e27a90040082366e32ceeeac22d6f4434eddbd08094ec99709d3b` |
+
+导出的 LLM ONNX：
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `model.onnx` | 4209515 | `78c7badb4cfa1f81dd71a66742b811c89131e232c7af6522fd73956ea59e9603` |
+| `model.onnx.data` | 1350303744 | `2b44da3836ef2fb02c90a227d97cce36c4c197263d5b16579ee314c325fce712` |
+| `embedding.safetensors` | 622329944 | `af9dbce9b96ca45a1cdc7c5ebdd18dc780567e707388e7cead78fbf1adb256d5` |
+
+传输归档 `qwen3_vl_2b_int4_awq_ps16_v1_llm.tar` 为 1988280320 字节，SHA-256 为
+`d99bdca5832bd7492bd6a8acde59841447bcf38cfbb640986f82a3518885e421`。
+
+### 28.6 Jetson 传输、engine 构建与运行
+
+服务器产物直接通过 SCP 传输到 Jetson，板端重新计算归档以及三个内部文件哈希，结果
+与服务器全部一致。板端命令如下：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+mkdir -p artifacts/transfers artifacts/onnx/qwen3_vl_2b_int4_awq_ps16_v1
+scp -P <AUTODL_PORT> <AUTODL_USER>@<AUTODL_HOST>:<REMOTE_ARCHIVE> \
+  artifacts/transfers/qwen3_vl_2b_int4_awq_ps16_v1_llm.tar
+sha256sum artifacts/transfers/qwen3_vl_2b_int4_awq_ps16_v1_llm.tar
+tar -xf artifacts/transfers/qwen3_vl_2b_int4_awq_ps16_v1_llm.tar \
+  -C artifacts/onnx/qwen3_vl_2b_int4_awq_ps16_v1
+
+export PYTHONPATH=/home/ubuntu/JetsonVLM/src
+.venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_int4_awq_ps16_v1_llm_engine_i768_k1024.json
+.venv-jetson/bin/python scripts/build_engine.py \
+  --config configs/flows/build_qwen3_vl_2b_int4_awq_ps16_v1_llm_engine_i768_k1024.json \
+  --execute
+```
+
+构建在 `graphical.target` 下直接成功，用时约 41.75 秒。LLM engine 结果：
+
+| 项目 | 结果 |
+| --- | --- |
+| profile | max input 768、KV capacity 1024 |
+| engine 字节数 | 1362893996 |
+| engine SHA-256 | `589d8ba247a93cdf794c86697bb5a5d5fe3387fee812744c51d09806912b3026` |
+| visual engine | 复用相同基础模型 revision 的 FP16 visual engine |
+| flow status | `succeeded` |
+
+运行时与 study 命令：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+export PYTHONPATH=/home/ubuntu/JetsonVLM/src
+
+PYTHONPATH=/home/ubuntu/JetsonVLM/src:/home/ubuntu/TensorRT-Edge-LLM \
+EDGELLM_PLUGIN_PATH=/home/ubuntu/TensorRT-Edge-LLM/build/libNvInfer_edgellm_plugin.so \
+LD_LIBRARY_PATH=/home/ubuntu/JetsonVLM/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib:/home/ubuntu/TensorRT-Edge-LLM/build:/usr/local/cuda/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu \
+.venv-jetson/bin/python scripts/serve_edgellm.py \
+  --engine-root artifacts/engines/qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024 \
+  --host 127.0.0.1 --port 8000
+
+curl http://127.0.0.1:8000/health
+sudo tegrastats --interval 1000 \
+  > reports/jetson-runtime-20260817-int4-domain/tegrastats_study.log 2>&1 &
+PYTHONPATH=src .venv-jetson/bin/python -m parksight_vlm.app.run_study \
+  --config configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot.json
+```
+
+`/health` 返回 healthy，20 条请求均获得 HTTP 200 并完成后端生成。评测结束后停止
+runtime；Jetson 仍为 `graphical.target`，空闲时 `available` 内存恢复到约 5.3 GiB。
+
+### 28.7 新领域 INT4 的冻结 20 样本结果
+
+质量结果：
+
+| 指标 | 新领域 ps16 INT4 | 旧通用 n128 INT4 |
+| --- | ---: | ---: |
+| 后端完成 | 20/20 | 20/20 |
+| 严格 JSON 有效率 | 4/20（20%） | 20/20（100%） |
+| 风险准确率 | 15% | 35% |
+| 事件 micro-F1 | 0 | 0 |
+| 失败 | 16 `json_parse_error` | 无 |
+
+检查 16 条失败的 `raw_output` 后，主要模式为：
+
+````text
+```json
+{...完整 JSON...}
+```
+````
+
+即输出内容通常可人工识别为 JSON，但含有 Markdown 围栏，不满足项目规定的“仅输出
+一个 JSON 对象”协议。评测器没有自动剥离围栏，因为这样会掩盖模型的格式遵循退化。
+
+包含全部 20 次后端执行的性能摘要：
+
+| 指标 | 结果 |
+| --- | ---: |
+| 端到端 min / mean | 9.26 / 11.04 s |
+| 端到端 p50 / p90 / p99 | 10.68 / 12.60 / 12.60 s |
+| 输出 token 总数 / 均值 | 1616 / 80.8 |
+| 聚合输出速率 | 7.32 token/s |
+| tegrastats 样本数 | 260 |
+| RAM 均值 / 峰值 | 5347 / 5354 MB |
+| swap | 969 / 12002 MB |
+| GPU 利用率均值 / p50 / 峰值 | 81.88% / 99% / 99% |
+| GPU 温度均值 / 峰值 | 59.75 / 62.97 C |
+| 输入功耗均值 / 峰值 | 9.26 / 12.73 W |
+
+旧通用 n128 INT4 的 p50 为 10.52 秒、聚合输出速率为 7.33 token/s。两版性能基本
+相同，新版 RAM 峰值反而从约 5072 MB 增加到 5354 MB。因此当前 16 条领域文本校准
+没有带来可确认的性能或质量收益。可能因素包括校准集仅一个 batch、领域覆盖窄、候选
+答案不是人工金标，以及 W4A16 AWQ 对生成格式的敏感性；这些属于后续假设，不写成
+已证实原因。
+
+### 28.8 证据回传与当前状态
+
+Jetson 证据已同步到本机忽略目录：
+
+```text
+reports/jetson-runtime-20260817-int4-domain/study.json
+reports/jetson-runtime-20260817-int4-domain/summary.json
+reports/jetson-runtime-20260817-int4-domain/server.log
+reports/jetson-runtime-20260817-int4-domain/tegrastats_build.log
+reports/jetson-runtime-20260817-int4-domain/tegrastats_study.log
+reports/jetson-runtime-20260817-int4-domain/build-flow.json
+reports/jetson-runtime-20260817-int4-domain/build-flow.log
+```
+
+服务器证据包已同步到：
+
+```text
+reports/server-sync-20260817/parksight_server_evidence_20260817.tar.gz
+reports/server-sync-20260817/evidence/
+```
+
+证据包 SHA-256 为
+`efff8bbb49a84cd1d7509ab029737b39de508c8ef60810e461b367907f0c682a`。包内保留 adapter、
+训练指标、三轮 study、合并 study、量化 provenance 和 train/merge/quantize/export
+flow；未重复回传 4.0 GiB 基础模型、2.0 GiB 量化权重或 ONNX 大文件。
+
+本轮完成后，计划中的“用复核标签重训 LoRA”和“用独立领域校准集重做 INT4”都已有
+真实运行证据。下一阶段不应盲目增加训练或量化轮次；如果继续提升质量，应先人工终审
+标注并扩大 calibration 覆盖，再以相同冻结 20 样本复测。

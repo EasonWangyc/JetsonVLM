@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -37,6 +38,7 @@ class HuggingFaceQwen3VlBackend:
         dtype: str = "auto",
         attn_implementation: str = "sdpa",
         adapter_path: str | None = None,
+        profile_stages: bool = False,
     ) -> None:
         self._model_id = model_id
         self._model_revision = model_revision
@@ -44,6 +46,7 @@ class HuggingFaceQwen3VlBackend:
         self._dtype = dtype
         self._attn_implementation = attn_implementation
         self._adapter_path = adapter_path
+        self._profile_stages = profile_stages
         self._processor = None
         self._model = None # 构造时不立即加载模型
         self._torch = None
@@ -81,7 +84,13 @@ class HuggingFaceQwen3VlBackend:
         if self._torch.cuda.is_available():
             self._torch.cuda.reset_peak_memory_stats()
         generate_start = time.perf_counter()
-        with self._torch.inference_mode(): # 纯推理，不计算梯度也不保存反向传播状态
+        profiler = (
+            _ForwardPhaseProfiler(self._model, self._torch)
+            if self._profile_stages
+            else None
+        )
+        profile_context = profiler if profiler is not None else nullcontext()
+        with self._torch.inference_mode(), profile_context: # 纯推理，不计算梯度也不保存反向传播状态
             generated_ids = self._model.generate(
                 **inputs,
                 max_new_tokens=workload.generation.max_new_tokens,
@@ -106,7 +115,12 @@ class HuggingFaceQwen3VlBackend:
             raw_output=output_text,
             stage_timings=StageTimings(
                 preprocess_ms=preprocess_ms,
+                vision_encode_ms=(
+                    profiler.vision_encode_ms if profiler is not None else None
+                ),
                 model_generate_ms=model_generate_ms,
+                prefill_ms=profiler.prefill_ms if profiler is not None else None,
+                decode_ms=profiler.decode_ms if profiler is not None else None,
             ),
             resource_snapshot=ResourceSnapshot(peak_memory_mb=peak_memory_mb),
             output_tokens=output_tokens,
@@ -192,6 +206,79 @@ def _require_cuda_architecture(torch_module: Any) -> None:
                 f"kernels for {required_architecture}; supported architectures: "
                 f"{supported_text}"
             ) from error
+
+
+class _ForwardPhaseProfiler:
+    """用模块 forward hook 细分视觉、prefill 与 decode 时延。
+
+    该诊断会在 hook 边界同步 CUDA，因此只用于独立 profiling study，不能替代
+    未插桩基线的端到端时延。语言模型第一次 forward 记为 prefill，后续 forward
+    记为 decode；找不到对应模块时保留 ``None``，不伪造阶段数据。
+    """
+
+    def __init__(self, model: Any, torch_module: Any) -> None:
+        self._torch = torch_module
+        self._handles: list[Any] = []
+        self._starts: dict[str, float] = {}
+        self._vision_calls: list[float] = []
+        self._language_calls: list[float] = []
+        modules = dict(model.named_modules())
+        self._visual_module = _find_profile_module(modules, "visual")
+        self._language_module = _find_profile_module(modules, "language_model")
+
+    def __enter__(self) -> "_ForwardPhaseProfiler":
+        if self._visual_module is not None:
+            self._register(self._visual_module, "visual", self._vision_calls)
+        if self._language_module is not None:
+            self._register(self._language_module, "language", self._language_calls)
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        for handle in self._handles:
+            handle.remove()
+        self._handles.clear()
+
+    def _register(self, module: Any, name: str, samples: list[float]) -> None:
+        def before(*_: Any) -> None:
+            self._synchronize()
+            self._starts[name] = time.perf_counter()
+
+        def after(*_: Any) -> None:
+            self._synchronize()
+            started = self._starts.pop(name, None)
+            if started is not None:
+                samples.append((time.perf_counter() - started) * 1000.0)
+
+        self._handles.append(module.register_forward_pre_hook(before))
+        self._handles.append(module.register_forward_hook(after))
+
+    def _synchronize(self) -> None:
+        if self._torch.cuda.is_available():
+            self._torch.cuda.synchronize()
+
+    @property
+    def vision_encode_ms(self) -> float | None:
+        return sum(self._vision_calls) if self._vision_calls else None
+
+    @property
+    def prefill_ms(self) -> float | None:
+        return self._language_calls[0] if self._language_calls else None
+
+    @property
+    def decode_ms(self) -> float | None:
+        return sum(self._language_calls[1:]) if len(self._language_calls) > 1 else None
+
+
+def _find_profile_module(modules: dict[str, Any], leaf_name: str) -> Any | None:
+    """选择最浅的匹配模块，兼容 ``model.visual`` 等上游命名。"""
+    matches = [
+        (name.count("."), name, module)
+        for name, module in modules.items()
+        if name == leaf_name or name.endswith(f".{leaf_name}")
+    ]
+    if not matches:
+        return None
+    return min(matches, key=lambda item: (item[0], item[1]))[2]
 
 
 class TransformersRuntime(RiskRuntime):

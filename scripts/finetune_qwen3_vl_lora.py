@@ -25,6 +25,19 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _oversample_non_low_records(
+    records: list[dict[str, Any]], factor: int
+) -> list[dict[str, Any]]:
+    if factor < 1:
+        raise ValueError("non_low_oversampling_factor must be at least 1")
+    expanded: list[dict[str, Any]] = []
+    for record in records:
+        risk_level = record.get("assessment", {}).get("risk_level")
+        repeats = factor if risk_level != "low" else 1
+        expanded.extend([record] * repeats)
+    return expanded
+
+
 def _messages(image: Any, workload: Any, answer: str | None = None) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = [
         {
@@ -115,7 +128,13 @@ def main() -> int:
     dataset_path = Path(config["dataset_path"]).resolve()
     workload = FrozenWorkload.load(Path(config["workload_path"]))
     records = _load_records(dataset_path)
-    train_records = [record for record in records if record["split"] == "train"]
+    unique_train_records = [
+        record for record in records if record["split"] == "train"
+    ]
+    train_records = _oversample_non_low_records(
+        unique_train_records,
+        int(config.get("non_low_oversampling_factor", 1)),
+    )
     validation_records = [
         record for record in records if record["split"] == "validation"
     ]
@@ -214,6 +233,10 @@ def main() -> int:
         "dataset_path": str(dataset_path),
         "workload_identity": workload.identity,
         "train_samples": len(train_records),
+        "unique_train_samples": len(unique_train_records),
+        "non_low_oversampling_factor": int(
+            config.get("non_low_oversampling_factor", 1)
+        ),
         "validation_samples": len(validation_records),
         "epochs": epochs,
         "optimizer_steps": optimizer_steps,

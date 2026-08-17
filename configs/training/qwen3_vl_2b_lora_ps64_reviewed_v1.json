@@ -1,0 +1,24 @@
+{
+  "model_path": "models/Qwen3-VL-2B-Instruct-89644892",
+  "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+  "dataset_path": "data/processed/lora/ps64_reviewed_v1.jsonl",
+  "workload_path": "configs/workloads/parking_risk_v1.json",
+  "output_directory": "artifacts/adapters/qwen3_vl_2b_parking_lora_ps64_reviewed_v1",
+  "seed": 42,
+  "epochs": 3,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.0,
+  "warmup_ratio": 0.1,
+  "gradient_accumulation_steps": 4,
+  "non_low_oversampling_factor": 2,
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "attn_implementation": "sdpa",
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj"
+  ]
+}

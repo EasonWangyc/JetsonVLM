@@ -1,0 +1,23 @@
+{
+  "calibration_id": "ps16_int4_calibration_v1",
+  "source_dataset": "ps80_reviewed_v1",
+  "selection_policy": "从原 64 条训练候选中按低风险、车辆近场、固定障碍和可见性类别分层选取；不得用于 LoRA 训练、验证或冻结测试。",
+  "source_group_ids": [
+    "p2_img43",
+    "p2_img115",
+    "p2_img50",
+    "20161109-02",
+    "image20160725144417",
+    "p2_img103",
+    "img4",
+    "p2_img119",
+    "20161109-06",
+    "20161109-08",
+    "p2_img109",
+    "p2_img94",
+    "20161109-04",
+    "20160725-3",
+    "p2_img101",
+    "p2_img14"
+  ]
+}

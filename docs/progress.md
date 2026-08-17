@@ -1,6 +1,6 @@
 # 项目进展记录
 
-更新时间：2026-08-13
+更新时间：2026-08-17
 
 ## 1. 当前结论
 
@@ -30,6 +30,20 @@ Python binding 和 builder/runtime 可执行文件均通过检查。
 已经闭环。LoRA 合并模型随后也在 Jetson 完成 engine 构建和同一 20 样本评测，事件
 micro-F1 提升到 0.389；当前领域质量仍需要独立人工标注数据继续改进。
 
+随后补齐了数据复核与 Transformers profiling：80 条弱监督样本生成联系表并完成
+Codex 单轮视觉复核候选标注，拆分为 48 train、16 validation、16 个无泄漏 INT4
+calibration；Jetson Transformers FP16 的未插桩 20 样本成功基线得到确认，并新增
+20 样本阶段插桩 study。插桩结果显示 decode 是主要耗时阶段，图像预处理并非当前
+端到端瓶颈。
+
+复核数据的后续实验也已实际完成。RTX 4090 D 上使用 48 个唯一 train、non-low x2
+得到 63 个有效训练记录，完成 3 epoch LoRA；服务器冻结 20 样本上 adapter 的严格
+JSON 为 100%、风险准确率 50%、事件 micro-F1 0.182。该结果缓解了未平衡训练的全
+low 塌缩，但事件 F1 低于旧弱监督 LoRA 的 0.389。独立 16 条领域文本随后完成 INT4
+AWQ、ONNX 导出和 Jetson engine 构建；板端 20/20 后端完成，但 16 条输出因 Markdown
+代码围栏触发严格 JSON 失败，JSON 有效率仅 20%，风险准确率 15%、事件 F1 为 0。
+该实验被保留为量化部署成功、质量验收失败的负向证据。
+
 从项目开始至今的完整命令、结果与证据见
 [`execution-report.md`](execution-report.md)。
 
@@ -41,6 +55,7 @@ micro-F1 提升到 0.389；当前领域质量仍需要独立人工标注数据�
 | 数据入口 | manifest、annotation、图片引用、来源组和数据划分校验 | 单元测试与 fixtures |
 | 工作负载 | prompt、生成参数、输入尺寸和 schema 的冻结配置及 SHA-256 身份 | 单元测试 |
 | Transformers | Qwen3-VL 懒加载、图片预处理、生成、输出解码、耗时和显存记录 | Adapter 代码与 mock 测试 |
+| Transformers profiling | 可选 hook 记录视觉编码、prefill、decode，并与未插桩基线分离 | 20 样本 StudyReport、451 条 tegrastats |
 | Edge-LLM | OpenAI-compatible HTTP 请求和响应解析 | Adapter 代码与 mock 测试 |
 | 运行记录 | 成功结果、JSON 失败、输入失败、超时和 OOM 等失败事实 | 单元测试 |
 | 研究汇总 | 质量指标、性能分位数、资源数据、失败汇总和环境快照 | 单元测试 |
@@ -52,6 +67,9 @@ micro-F1 提升到 0.389；当前领域质量仍需要独立人工标注数据�
 | FP16 runtime | 插件加载、权重流式预算、双 engine、CUDA graph 与 HTTP 服务 | server log 与 `/health` 200 |
 | 单图/20 样本 | 真实图片推理、20/20 严格 JSON 成功与同机遥测 | StudyReport、runtime summary、542 条 tegrastats |
 | Jetson LoRA | 合并模型 engine、3/3 smoke、20/20 Study 与同板质量对照 | `succeeded` flow、StudyReport、319 条 tegrastats |
+| 数据复核/校准 | 80 条 Codex 单轮视觉复核候选，48/16/16 无泄漏拆分 | annotation、拆分配置、生成脚本与单元测试 |
+| 复核数据 LoRA | 3 轮训练对照、最终 adapter/merged 的服务器冻结集复测 | training summary、flow log、两个 StudyReport |
+| 领域 INT4 | ps16 校准、AWQ、ONNX、Jetson engine 与 20 样本复测 | provenance、`succeeded` flow、StudyReport、260 条 tegrastats |
 
 ## 3. Jetson 环境快照
 
@@ -267,5 +285,67 @@ Edge-LLM FP16，平均端到端延迟加速 5.02x、engine 缩小 60.5%、RAM �
 但通用文本校准使事件 micro-F1 从 0.359 退化到 0，结果被保留为部署成功但质量不合格
 的实验事实。
 
-同机加速比还需要补齐 Jetson Transformers FP16 的同一 20 样本报告；早期 OOM 记录
-保留为明确实验结果，但不能用服务器 Transformers 延迟替代板端基线。
+### 7.3 Transformers FP16 基线与 profiling
+
+同一冻结 20 样本的 Jetson Transformers FP16 未插桩基线已成功完成：20/20 后端
+完成、严格 JSON 有效率 100%，端到端 p50/p90/p99 为 9.38/14.12/27.94 秒，模型生成
+p50 为 9.35 秒。独立插桩 study 也完成 20/20，阶段 p50 如下：
+
+| 阶段 | p50 |
+| --- | ---: |
+| 图像/Processor 预处理 | 27.60 ms |
+| 视觉编码 | 225.11 ms |
+| LLM prefill | 626.51 ms |
+| LLM decode | 17.04 s |
+| 插桩模型生成 | 19.24 s |
+
+插桩在模块 hook 边界调用 CUDA synchronize，因此绝对时延高于未插桩基线，不能用于
+计算加速比。其用途是判断阶段占比：decode 约占插桩生成 p50 的 88.5%，单 token
+decode 中位耗时约 226.3 ms；预处理只占端到端极小比例，当前没有证据支持优先开发
+自定义 CUDA 预处理 kernel。
+
+本次在 `graphical.target` 下执行，模型最终 `hf_device_map` 为 `{'': 0}`，即完整映射
+到 `cuda:0`。451 条遥测记录显示 RAM/swap 峰值为 7302/1174 MB、GPU 利用率均值
+58.55%、输入功耗均值 8.77 W、GPU 峰温 60.97°C，最小 lfb 为 1x2 MB。当前环境可
+运行但统一内存余量很小；早期旧环境 NvMap/OOM 记录继续保留为失败边界，不能用
+`free -h` 或 swap 是否启用单独解释。
+
+### 7.4 视觉复核候选数据与 INT4 校准拆分
+
+现有 teacher 数据的 80 条 `risk_level` 全为 low，65 条包含 `narrow_passage`。本轮
+逐图生成五张联系表并建立 Codex 单轮视觉复核候选标注；相对 teacher，33 条风险等级
+和 77 条事件集合发生变化。拆分脚本强制校验来源组唯一性和冻结测试集隔离，最终为
+48 条 LoRA train、16 条 validation、16 条 INT4 calibration，全部来源组交集为 0。
+
+新 calibration 记录保留图片路径、冻结 workload 身份和结构化候选答案用于追溯，
+但 TensorRT Edge-LLM 当前量化的是 LLM backbone，量化输入字段是泊车 system/user
+prompt 与 JSON 答案组成的领域文本；这不等同于量化 FP16 视觉编码器。新数据已在
+4090 D 上完成 LoRA 重训和 INT4 重新量化，并在 Jetson 完成 engine 与冻结集复测。
+
+LoRA 最终 adapter 的风险准确率为 50%，但事件 micro-F1 只有 0.182；领域 INT4 的
+严格 JSON 有效率从旧版 100% 退化到 20%，事件 F1 仍为 0。因此两项实验均不能宣称
+整体质量提升。Codex 单轮复核不等同于人工双人金标，正式质量实验前仍需人工终审。
+
+### 7.5 复核 LoRA 与领域 INT4 的最终结果
+
+服务器训练环境为 RTX 4090 D、PyTorch 2.8.0+cu128、Transformers 5.9.0。最终 LoRA
+训练 3 epoch、48 个 optimizer step，validation loss 为 0.7220、峰值 CUDA 显存
+5.273 GiB、耗时 80.84 秒。服务器冻结 20 样本结果为：
+
+| 模型 | 严格 JSON | 风险准确率 | 事件 micro-F1 |
+| --- | ---: | ---: | ---: |
+| e3 未平衡 adapter | 100% | 35% | 0 |
+| e3 non-low x2 adapter | 100% | 50% | 0.182 |
+| e3 non-low x2 merged | 100% | 45% | 0.100 |
+
+领域 INT4 固定 calibration SHA-256 为
+`0949bfb7649f74a0a537781e5e46363d9b76cb3b046ecf4b91b6cd02171f77f3`，量化边界仅为
+LLM backbone W4A16 AWQ；visual 与 `lm_head` 保持 FP16，KV cache 未量化。Jetson
+engine 为 1362893996 字节，SHA-256 为
+`589d8ba247a93cdf794c86697bb5a5d5fe3387fee812744c51d09806912b3026`。
+
+Jetson 冻结 20 样本后端完成 20/20，但严格 JSON 只有 4/20，16 条
+`json_parse_error` 主要由 Markdown JSON 围栏造成。全部后端执行的端到端 p50 为
+10.68 秒，聚合输出速率 7.32 token/s；260 条遥测的 RAM 峰值 5354 MB、GPU 利用率
+均值 81.88%、输入功耗均值 9.26 W、GPU 峰温 62.97 C。与旧通用 n128 INT4 相比，
+性能近似但质量更差，故不替换旧 engine 作为当前质量对照。

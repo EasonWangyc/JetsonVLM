@@ -38,7 +38,13 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
     if config.backend == "transformers":
         _require_allowed_options(
             config.options,
-            {"device_map", "dtype", "attn_implementation", "adapter_path"},
+            {
+                "device_map",
+                "dtype",
+                "attn_implementation",
+                "adapter_path",
+                "profile_stages",
+            },
             "transformers",
         )
         backend = HuggingFaceQwen3VlBackend(
@@ -54,6 +60,7 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
                 if "adapter_path" in config.options
                 else None
             ),
+            profile_stages=_option_bool(config.options, "profile_stages", False),
         )
         return TransformersRuntime(
             data_root=data_root,
@@ -105,3 +112,10 @@ def _option_text(options: Mapping[str, Any], key: str, default: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AppConfigError(f"runtime.options.{key} must be a non-blank string")
     return value.strip()
+
+
+def _option_bool(options: Mapping[str, Any], key: str, default: bool) -> bool:
+    value = options.get(key, default)
+    if not isinstance(value, bool):
+        raise AppConfigError(f"runtime.options.{key} must be a boolean")
+    return value
