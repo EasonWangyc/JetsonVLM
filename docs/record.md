@@ -736,8 +736,7 @@ model.safetensors bytes  = 4255140312
 model.safetensors sha256 = 7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0
 ```
 
-该 revision 是单个 `model.safetensors`，没有
-`model.safetensors.index.json`。导出 flow 的 required inputs 因此修正为真实文件。
+该 revision 是单个 `model.safetensors`，没有`model.safetensors.index.json`。导出 flow 的 required inputs 因此修正为真实文件。
 
 ### 11.3 dry-run 与正式导出
 
@@ -2299,14 +2298,12 @@ FP16/BF16 checkpoint
 
 关键边界：
 
-- Jetson Orin + JetPack 6.2 支持 FP16、INT8 和 INT4；不支持 FP8、NVFP4 等 runtime
-  精度；
+- Jetson Orin + JetPack 6.2 支持 FP16、INT8 和 INT4；不支持 FP8、NVFP4 等 runtime精度；
 - INT4 groupwise plugin 使用对称 weight-only 量化，当前 group size 为 128；
 - Qwen3-VL 的目标组合为 LLM backbone INT4 AWQ、视觉编码器 FP16；
 - 不指定 `--visual_quantization` 时视觉塔保持 FP16；
 - 不指定 `--lm_head_quantization` 时 LM head 保持 FP16；
-- 量化和 ONNX 导出必须在 x86-64 Linux + NVIDIA GPU 上执行，Jetson 只承担 C++
-  runtime 与 engine 构建；
+- 量化和 ONNX 导出必须在 x86-64 Linux + NVIDIA GPU 上执行，Jetson 只承担 C++runtime 与 engine 构建；
 - 2B 模型官方建议至少 8--16 GB VRAM，因而优先使用既有 AutoDL GPU 实例。
 
 预定量化命令采用 128 条 `cnn_dailymail` 文本样本，在项目时间优先的约束下缩短校准
