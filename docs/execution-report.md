@@ -1655,3 +1655,7 @@ case、非法 assessment 或不支持的状态都会在写出前失败。`--requ
 `human_assessment` 与 `review_note`。下载的 JSONL 与 `apply_review_decisions.py` 的
 输入契约一致；未完成条目不会被导出为 finalized，页面也不会自动创建
 `human_confirmed_v1`。新增 1 个工作流测试后，无硬件测试累计 `78/78` 通过。
+
+为降低长时间复核的中断风险，页面增加浏览器 localStorage 草稿保存和恢复。它只保存
+当前浏览器中的编辑状态，不写入项目文件；只有用户主动下载并应用 finalized 决策时，
+review package 才会发生变化。

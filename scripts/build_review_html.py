@@ -234,6 +234,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflo
 <label>筛选优先级 <select id="priority-filter"><option value="all">全部</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select></label>
 <button id="confirm-visible">将当前显示项标为 confirmed</button>
 <button class="primary" id="download">下载已完成决策 JSONL</button>
+<span id="draft-status">草稿自动保存于当前浏览器</span>
 <span id="summary"></span>
 </div>
 </header>
@@ -241,20 +242,68 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflo
 <script type="application/json" id="review-data">__CASES__</script>
 <script>
 const CASES = JSON.parse(document.getElementById("review-data").textContent);
+const STORAGE_KEY = "parksight-vlm-review-ps80-candidate-v1";
 function visibleCards() { return [...document.querySelectorAll(".card:not(.hidden)")]; }
 function updateSummary() {
   const counts = {pending: 0, confirmed: 0, corrected: 0};
   document.querySelectorAll(".card").forEach(card => counts[card.querySelector('[data-field="status"]').value]++);
   document.getElementById("summary").textContent = `共 ${CASES.length} 条 | pending ${counts.pending} | confirmed ${counts.confirmed} | corrected ${counts.corrected}`;
 }
+function readDraft(card) {
+  return {
+    status: card.querySelector('[data-field="status"]').value,
+    risk: card.querySelector('[data-field="risk"]').value,
+    events: [...card.querySelectorAll('[data-field="events"]:checked')].map(input => input.value),
+    advice: [...card.querySelectorAll('[data-field="advice"]:checked')].map(input => input.value),
+    evidence: card.querySelector('[data-field="evidence"]').value,
+    note: card.querySelector('[data-field="note"]').value
+  };
+}
+function saveDraft() {
+  try {
+    const draft = {};
+    document.querySelectorAll(".card").forEach(card => { draft[card.dataset.caseId] = readDraft(card); });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    document.getElementById("draft-status").textContent = "草稿已自动保存";
+  } catch (error) {
+    document.getElementById("draft-status").textContent = "浏览器未提供草稿存储";
+  }
+}
+function restoreDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    document.querySelectorAll(".card").forEach(card => {
+      const state = draft[card.dataset.caseId];
+      if (!state) return;
+      if (["pending", "confirmed", "corrected"].includes(state.status)) {
+        card.querySelector('[data-field="status"]').value = state.status;
+      }
+      if (["low", "medium", "high"].includes(state.risk)) {
+        card.querySelector('[data-field="risk"]').value = state.risk;
+      }
+      ["events", "advice"].forEach(field => {
+        const values = new Set(Array.isArray(state[field]) ? state[field] : []);
+        card.querySelectorAll(`[data-field="${field}"]`).forEach(input => { input.checked = values.has(input.value); });
+      });
+      if (typeof state.evidence === "string") card.querySelector('[data-field="evidence"]').value = state.evidence;
+      if (typeof state.note === "string") card.querySelector('[data-field="note"]').value = state.note;
+    });
+    document.getElementById("draft-status").textContent = "已恢复本地草稿";
+  } catch (error) {
+    document.getElementById("draft-status").textContent = "无可恢复草稿";
+  }
+}
 document.getElementById("priority-filter").addEventListener("change", event => {
   document.querySelectorAll(".card").forEach(card => card.classList.toggle("hidden", event.target.value !== "all" && card.dataset.priority !== event.target.value));
 });
 document.getElementById("confirm-visible").addEventListener("click", () => {
   visibleCards().forEach(card => card.querySelector('[data-field="status"]').value = "confirmed");
+  saveDraft();
   updateSummary();
 });
-document.querySelectorAll('[data-field="status"]').forEach(select => select.addEventListener("change", updateSummary));
+document.querySelectorAll('[data-field="status"]').forEach(select => select.addEventListener("change", () => { updateSummary(); saveDraft(); }));
+document.querySelectorAll('[data-field]:not([data-field="status"])').forEach(input => input.addEventListener("input", saveDraft));
+document.querySelectorAll('[data-field]:not([data-field="status"])').forEach(input => input.addEventListener("change", saveDraft));
 function readAssessment(card) {
   return {
     schema_version: "parking_risk_v1",
@@ -282,6 +331,7 @@ document.getElementById("download").addEventListener("click", () => {
   link.click();
   URL.revokeObjectURL(link.href);
 });
+restoreDraft();
 updateSummary();
 </script>
 </body>

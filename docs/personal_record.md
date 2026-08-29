@@ -1252,3 +1252,7 @@ train/validation split、图片、workload 和模型目录，不导入 CUDA 训�
 字段，可直接交给 `scripts/apply_review_decisions.py`；页面不自动定稿，也不绕过
 `human_confirmed_v1` provenance gate。本轮新增 1 个 HTML 工作流测试，无硬件测试累计
 `78/78` 通过。
+
+页面还会将 pending、confirmed、corrected 以及当前字段内容保存到浏览器 localStorage，
+重新打开同一 HTML 文件时恢复草稿；该状态不写入仓库，也不改变 review package 的
+`candidate` 状态。

@@ -500,6 +500,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("data:image/jpeg;base64,ZmFrZS1qcGVn", document)
         self.assertIn("sample-1", document)
         self.assertIn("review_decisions_batch.jsonl", document)
+        self.assertIn("localStorage", document)
+        self.assertIn("restoreDraft", document)
 
 
 if __name__ == "__main__":

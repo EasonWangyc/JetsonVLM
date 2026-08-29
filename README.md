@@ -336,7 +336,9 @@ Pillow：
 浏览器打开 `reports\label-review-20260830\ps80_candidate_review.html`，逐条选择
 `confirmed` 或 `corrected`，必要时填写人工修正后的风险等级、事件、证据、驾驶建议和
 复核说明，然后下载决策 JSONL。建议先处理页面标出的 high-priority 样本，再用
-`--require-complete` 检查 80 条是否全部定稿。
+`--require-complete` 检查 80 条是否全部定稿。页面会将当前草稿自动保存到当前浏览器的
+本地存储中，关闭页面后重新打开同一文件可以恢复；草稿不会写入仓库或自动进入正式
+package。
 
 复盘过程中可随时检查完成度；该命令只读 package，并用 `--fail-on-incomplete` 在仍有
 待处理或非法定稿记录时返回退出码 `2`：

@@ -3955,3 +3955,5 @@ checkpoint 作为正式模型导出和部署。
 内嵌 80 张图片，支持逐条填写 `confirmed`/`corrected` 决策并下载兼容
 `apply_review_decisions.py` 的 JSONL。页面只提供人工复核界面，不修改候选 annotation，
 不绕过正式 provenance gate。本阶段新增 1 个工作流测试，无硬件测试累计 `78/78` 通过。
+页面同时使用浏览器 localStorage 保存和恢复未完成草稿；该机制不写入仓库，不改变
+`candidate` 状态，也不降低人工终审门禁。

@@ -409,3 +409,5 @@ micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`。合计
 要求人工明确完成 `confirmed`/`corrected`，不会把 Codex 候选结果自动升级为
 `human_confirmed_v1`。新增功能后无硬件测试累计 `78/78` 通过，下一阶段是实际人工复核
 并运行完整 provenance gate。
+页面增加浏览器 localStorage 草稿恢复，支持分阶段复核而不丢失当前编辑内容；该草稿
+仍不等于 finalized 决策。
