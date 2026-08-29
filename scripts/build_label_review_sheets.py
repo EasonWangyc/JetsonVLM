@@ -64,6 +64,7 @@ def build_contact_sheets(
     cell_width: int,
     cell_height: int,
     candidate_annotations: Mapping[str, dict[str, Any]] | None = None,
+    review_details: Mapping[str, list[str]] | None = None,
 ) -> list[Path]:
     """按固定网格生成联系表，返回生成文件列表。"""
     try:
@@ -76,7 +77,7 @@ def build_contact_sheets(
 
     output_directory.mkdir(parents=True, exist_ok=True)
     font = ImageFont.load_default(size=18)
-    header_height = 88
+    header_height = 128
     line_height = 20
     page_size = columns * rows
     page_count = math.ceil(len(records) / page_size)
@@ -107,7 +108,7 @@ def build_contact_sheets(
             header_lines = wrap(
                 f"{page_index * page_size + cell_index + 1:02d}  {case_id}",
                 width=34,
-                break_long_words=False,
+                break_long_words=True,
                 break_on_hyphens=False,
             )
             if candidate_annotations and case_id in candidate_annotations:
@@ -118,11 +119,21 @@ def build_contact_sheets(
                     wrap(
                         f"candidate: {risk_level} | {events or 'no_event'}",
                         width=34,
-                        break_long_words=False,
+                        break_long_words=True,
                         break_on_hyphens=False,
                     )
                 )
-            for line_index, line in enumerate(header_lines[:4]):
+            if review_details and case_id in review_details:
+                for detail in review_details[case_id]:
+                    header_lines.extend(
+                        wrap(
+                            detail,
+                            width=34,
+                            break_long_words=True,
+                            break_on_hyphens=False,
+                        )
+                    )
+            for line_index, line in enumerate(header_lines[:6]):
                 draw.text(
                     (left + 6, top + 4 + line_index * line_height),
                     line,
@@ -143,8 +154,18 @@ def build_contact_sheets(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--records", required=True, type=Path)
+    parser.add_argument("--records", type=Path)
     parser.add_argument("--annotations", type=Path)
+    parser.add_argument(
+        "--error-review",
+        type=Path,
+        help="读取 build_candidate_error_review.py 的 JSON 输出，并显示 model/priority",
+    )
+    parser.add_argument(
+        "--priority",
+        choices=("high", "medium", "low"),
+        help="使用 --error-review 时只生成指定复核优先级",
+    )
     parser.add_argument("--image-root", required=True, type=Path)
     parser.add_argument("--output-directory", required=True, type=Path)
     parser.add_argument("--columns", type=int, default=4)
@@ -153,7 +174,43 @@ def main() -> int:
     parser.add_argument("--cell-height", type=int, default=270)
     args = parser.parse_args()
 
-    records = _load_records(args.records)
+    if (args.records is None) == (args.error_review is None):
+        parser.error("必须且只能提供 --records 或 --error-review")
+
+    review_details: dict[str, list[str]] = {}
+    if args.error_review is not None:
+        review = json.loads(args.error_review.read_text(encoding="utf-8"))
+        items = review.get("items", [])
+        if not isinstance(items, list):
+            raise ValueError("error review items must be an array")
+        selected = [
+            item
+            for item in items
+            if args.priority is None or item.get("review_priority") == args.priority
+        ]
+        records = [
+            {"case_id": item["case_id"], "image_ref": item["image_ref"]}
+            for item in selected
+        ]
+        candidate_annotations = {
+            item["case_id"]: item["candidate_assessment"] for item in selected
+        }
+        for item in selected:
+            model = item.get("model_assessment")
+            if model is None:
+                failure = item.get("failure") or {}
+                model_label = f"model: FAIL | {failure.get('category', 'unknown_failure')}"
+            else:
+                events = ",".join(model.get("events", [])) or "no_event"
+                model_label = f"model: {model.get('risk_level', 'unknown')} | {events}"
+            review_details[item["case_id"]] = [
+                model_label,
+                f"priority: {item.get('review_priority', 'unknown')}",
+            ]
+    else:
+        records = _load_records(args.records)
+        candidate_annotations = _load_candidate_annotations(args.annotations)
+
     paths = build_contact_sheets(
         records=records,
         image_root=args.image_root,
@@ -162,7 +219,8 @@ def main() -> int:
         rows=args.rows,
         cell_width=args.cell_width,
         cell_height=args.cell_height,
-        candidate_annotations=_load_candidate_annotations(args.annotations),
+        candidate_annotations=candidate_annotations,
+        review_details=review_details,
     )
     print(json.dumps({"sheets": [str(path) for path in paths]}, ensure_ascii=False))
     return 0

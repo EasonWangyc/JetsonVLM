@@ -290,6 +290,17 @@ Pillow：
   --output-directory reports\label-review-20260829
 ```
 
+也可以直接从错误复核清单生成指定优先级的对照页，同时显示 candidate、model/failure
+和 priority：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\build_label_review_sheets.py `
+  --error-review reports\label-review-20260830\ps80_candidate_error_review_v1.json `
+  --priority high `
+  --image-root data\processed\lora\source_images `
+  --output-directory reports\label-review-20260830\high-priority-sheets
+```
+
 复盘过程中可随时检查完成度；该命令只读 package，并用 `--fail-on-incomplete` 在仍有
 待处理或非法定稿记录时返回退出码 `2`：
 
