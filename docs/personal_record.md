@@ -1068,8 +1068,10 @@ Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，
 显式门禁，不会修改候选 package。
 
 为支持先行验证开发链路，新增 `qwen3_vl_2b_lora_ps64_codex_candidate_v1` 训练配置和
-服务器冻结集 study 配置。候选训练必须使用独立产物目录和 `codex_candidate` 标识；
-该路径可以验证训练与 adapter 推理流程，但结果不进入正式质量结论。
+服务器冻结集 study 配置，并将候选 LoRA 数据固定命名为
+`data/processed/lora/ps64_codex_candidate_v1.jsonl`。候选训练必须使用独立产物目录和
+`codex_candidate` 标识；该路径可以验证训练与 adapter 推理流程，但结果不进入正式质量
+结论。
 
 ### 2.12 2026-08-30：Edge-LLM 静态部署预检
 

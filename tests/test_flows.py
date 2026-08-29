@@ -90,7 +90,7 @@ class ExternalFlowPlanTests(unittest.TestCase):
         self.assertEqual(plan.stage, "train_lora")
         self.assertIn("codex_candidate", " ".join(plan.command))
         self.assertTrue(
-            any(path.name == "ps64_reviewed_v1.jsonl" for path in plan.required_inputs)
+            any(path.name == "ps64_codex_candidate_v1.jsonl" for path in plan.required_inputs)
         )
         self.assertTrue(
             any("codex_candidate_v1" in path.as_posix() for path in plan.expected_outputs)

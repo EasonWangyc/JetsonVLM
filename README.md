@@ -286,7 +286,8 @@ split 校验，也不会被误用于正式训练；只有将 package 定稿为 `
 
 如果需要在人工终审前验证训练链路，可显式使用
 `configs/flows/train_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json`。该配置只允许候选
-来源进入名为 `codex_candidate` 的实验产物，训练摘要和后续报告不得作为人工金标或最终
+来源进入显式命名的 `data/processed/lora/ps64_codex_candidate_v1.jsonl` 数据和
+`codex_candidate` 实验产物，训练摘要和后续报告不得作为人工金标或最终
 质量结论；训练完成后可使用
 `configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps20_pilot.json` 做服务器
 冻结集验证。正式复现仍使用 `train_qwen3_vl_2b_lora_ps64_reviewed_v1.json`。
