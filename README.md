@@ -200,6 +200,45 @@ docs/               # 架构、数据、评测、部署和进展记录
 - `RiskRuntime.analyze(case, workload)`：执行一次推理并保留成功或失败事实。
 - `StudyRunner.run(casebook, runtime, study)`：聚合推理记录并生成 `StudyReport`。
 
+## 80 样本候选标注复盘流程
+
+项目支持先生成 Codex 候选标注，再由人工在同一份 package 上确认或修改。候选结果保持
+`review_status=candidate`，不会自动进入最终金标状态：
+
+```powershell
+$env:PYTHONPATH = "src"
+& ".\.venv\Scripts\python.exe" scripts\build_review_package.py `
+  --manifest data\manifests\ps80_development_v1.jsonl `
+  --candidate-annotations data\annotations\ps80_reviewed_v1.jsonl `
+  --output reports\label-review-20260829\ps80_codex_review_package_v1.jsonl
+```
+
+联系表支持从嵌套的本地图片目录递归定位文件，并显示候选风险等级和事件。该命令需要
+Pillow：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\build_label_review_sheets.py `
+  --records data\manifests\ps80_development_v1.jsonl `
+  --annotations data\annotations\ps80_reviewed_v1.jsonl `
+  --image-root data\raw\ps2.0 `
+  --output-directory reports\label-review-20260829
+```
+
+复盘完成后，再使用 `scripts/prepare_reviewed_lora_dataset.py` 校验 schema、来源组隔离、
+LoRA train/validation 与 INT4 calibration 拆分。当前 package 仍属于候选标注，人工确认
+结果应写入 `human_assessment`，并将 `review_status` 改为 `confirmed` 或 `corrected`；说明
+写入 `review_note`。确认后先运行：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\finalize_review_package.py `
+  --package reports\label-review-20260829\ps80_codex_review_package_v1.jsonl `
+  --annotations-output data\annotations\ps80_human_confirmed_v1.jsonl `
+  --summary-output reports\label-review-20260829\ps80_human_confirmed_v1_summary.json
+```
+
+生成的标准 annotation JSONL 再作为 `prepare_reviewed_lora_dataset.py` 的
+`--annotations` 输入。
+
 ## 开始使用
 
 无硬件测试：
