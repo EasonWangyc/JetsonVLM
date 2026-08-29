@@ -1607,3 +1607,20 @@ SHA-256: d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87
 本轮结果不能替代人工终审；后续正式路径仍为人工确认 80 条候选标注、生成
 `human_confirmed_v1`、重新训练/合并/量化，并在冻结 `ps20_pilot_v1` 上统一 workload 和
 指标口径复测。
+
+## 28. 人工复核决策增量应用工具（2026-08-30）
+
+现有 review package 需要逐条记录 `review_status`、`human_assessment` 和
+`review_note`。为避免人工直接编辑完整 JSONL 时破坏字段结构，新增
+`scripts/apply_review_decisions.py`。它读取候选 package 和一个只包含当前批次决策的
+JSONL，按 `case_id` 更新 package，未出现在决策文件中的记录保持原状态，并输出完成度
+统计。
+
+决策记录的固定字段为 `case_id`、`review_status`、`human_assessment`、`review_note`。
+`confirmed` 允许 `human_assessment=null`，工具会明确复制 candidate assessment；
+`corrected` 必须提供不同的 `ParkingAssessment` 和非空 `review_note`。未知 case、重复
+case、非法 assessment 或不支持的状态都会在写出前失败。`--require-complete` 会要求
+所有 package 记录已经 finalized，适合作为进入 `finalize_review_package.py` 前的门禁。
+
+该工具通过 3 个新增工作流测试，项目无硬件测试累计 `73/73` 通过；它只管理人工复核
+状态，不修改候选 annotation，也不绕过 `human_confirmed_v1` provenance gate。

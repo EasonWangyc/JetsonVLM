@@ -1222,3 +1222,10 @@ micro-F1 都为 0，不能据此判断模型已学会六类风险事件。相较
 和 validation 版本。报告保存在本地忽略目录 `reports/`，SHA-256 分别为
 `d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
 `d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
+
+为降低人工复盘时直接编辑 80 行 JSONL 的出错概率，新增
+`scripts/apply_review_decisions.py`。该入口接收只包含 `case_id`、`review_status`、
+`human_assessment` 和 `review_note` 的决策 JSONL，支持只更新当前批次并保留其余
+`candidate` 记录；`confirmed` 且 assessment 为 `null` 时显式复制候选 assessment，
+`corrected` 则要求提供不同的结构化 assessment 和非空 review note。`--require-complete`
+用于人工终审结束后的全量门禁。本轮新增 3 个工作流测试，无硬件测试累计 73 个通过。

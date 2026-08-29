@@ -336,6 +336,27 @@ LoRA train/validation 与 INT4 calibration 拆分。当前 package 仍属于候�
 结果应写入 `human_assessment`，并将 `review_status` 改为 `confirmed` 或 `corrected`；说明
 写入 `review_note`。确认后先运行：
 
+人工决策可以通过 `scripts/apply_review_decisions.py` 增量应用，不需要直接改动完整
+package。决策 JSONL 每行只包含 `case_id`、`review_status`、`human_assessment` 和
+`review_note`；`confirmed` 可以将 `human_assessment` 设为 `null`，工具会把候选结果作为
+明确确认的人工结果写入；`corrected` 必须提供不同的完整 assessment 和非空说明：
+
+```json
+{"case_id":"ps2-p2_img43_3396","review_status":"confirmed","human_assessment":null,"review_note":"人工确认候选结果"}
+```
+
+决策文件可以只包含当前已复核的 case，未出现的 case 会保持 `candidate`：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\apply_review_decisions.py `
+  --package reports\label-review-20260829\ps80_codex_review_package_v1.jsonl `
+  --decisions reports\label-review-20260829\review_decisions_batch_01.jsonl `
+  --output reports\label-review-20260829\ps80_codex_review_package_v2.jsonl
+```
+
+全部 case 完成后，加上 `--require-complete`；随后再执行下面的 inspect 和 finalize
+命令。工具不改变候选 annotation，也不会绕过 `human_confirmed_v1` provenance gate。
+
 ```powershell
 & ".\.venv\Scripts\python.exe" scripts\finalize_review_package.py `
   --package reports\label-review-20260829\ps80_codex_review_package_v1.jsonl `

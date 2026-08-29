@@ -9,6 +9,7 @@ from pathlib import Path
 
 from scripts.build_label_review_sheets import _resolve_image
 from scripts.build_review_package import build_review_package
+from scripts.apply_review_decisions import apply_review_decisions
 from scripts.finalize_review_package import finalize_review_package
 from scripts.inspect_review_package import inspect_review_package
 
@@ -240,6 +241,174 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(report["pending_count"], 1)
         self.assertEqual(report["pending_case_ids"], ["sample-1"])
         self.assertEqual(report["candidate_risk_level_counts"], {"low": 1})
+
+    def test_apply_review_decisions_supports_incremental_confirmation(self) -> None:
+        assessment = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            decisions = root / "decisions.jsonl"
+            output = root / "updated-package.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "candidate",
+                        "candidate_assessment": assessment,
+                        "human_assessment": None,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            decisions.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "review_status": "confirmed",
+                        "human_assessment": None,
+                        "review_note": "人工确认候选结果",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            summary = apply_review_decisions(
+                package_path=package,
+                decisions_path=decisions,
+                output_path=output,
+                require_complete=True,
+            )
+            record = json.loads(output.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(summary["finalized_count"], 1)
+        self.assertTrue(summary["ready_for_finalize"])
+        self.assertEqual(record["review_status"], "confirmed")
+        self.assertEqual(record["human_assessment"], assessment)
+
+    def test_apply_review_decisions_preserves_pending_records(self) -> None:
+        assessment = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            decisions = root / "decisions.jsonl"
+            output = root / "updated-package.jsonl"
+            records = []
+            for case_id in ("sample-1", "sample-2"):
+                records.append(
+                    {
+                        "case_id": case_id,
+                        "image_ref": f"raw/{case_id}.jpg",
+                        "source_group_id": case_id,
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "candidate",
+                        "candidate_assessment": assessment,
+                        "human_assessment": None,
+                        "review_note": "",
+                    }
+                )
+            package.write_text(
+                "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+                encoding="utf-8",
+            )
+            decisions.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "review_status": "confirmed",
+                        "human_assessment": None,
+                        "review_note": "人工确认",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            summary = apply_review_decisions(
+                package_path=package,
+                decisions_path=decisions,
+                output_path=output,
+            )
+            updated = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(summary["decision_count"], 1)
+        self.assertEqual(summary["pending_count"], 1)
+        self.assertEqual(updated[0]["review_status"], "confirmed")
+        self.assertEqual(updated[1]["review_status"], "candidate")
+
+    def test_apply_review_decisions_requires_note_for_correction(self) -> None:
+        candidate = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        corrected = {**candidate, "risk_level": "medium"}
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            decisions = root / "decisions.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "candidate",
+                        "candidate_assessment": candidate,
+                        "human_assessment": None,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            decisions.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "review_status": "corrected",
+                        "human_assessment": corrected,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "requires review_note"):
+                apply_review_decisions(
+                    package_path=package,
+                    decisions_path=decisions,
+                    output_path=root / "updated.jsonl",
+                )
 
 
 if __name__ == "__main__":
