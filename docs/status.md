@@ -23,6 +23,10 @@
   校验数据来源、schema、split、图片、workload 和模型路径。候选配置实测通过；当前
   `ps64_reviewed_v1` 正式配置因数据仍为 Codex 候选来源而在模型加载前拒绝。无硬件测试
   已累计 `77/77` 通过。
+- 新增 `scripts/build_review_html.py`，将 80 条错误复核记录和本地图片打包为单文件离线
+  复核页面；页面支持逐条填写 `confirmed`/`corrected` 决策，并下载可直接交给
+  `apply_review_decisions.py` 的 JSONL。当前生成页面已嵌入 80 张图片，仍需人工实际
+  复核后才能形成 `human_confirmed_v1`；新增功能后无硬件测试累计 `78/78` 通过。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 

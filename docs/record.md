@@ -3947,3 +3947,11 @@ checkpoint 作为正式模型导出和部署。
 
 该变更新增 2 个无模型测试，项目无硬件测试累计 `77/77` 通过。人工终审完成并重新
 生成标准数据后，应先执行 `--validate-only`，再启动正式训练。
+
+### 29.4 离线 HTML 复核页面
+
+新增 `scripts/build_review_html.py`，将错误复核清单与本地图片生成单文件离线页面。
+实际输出 `reports/label-review-20260830/ps80_candidate_review.html`，覆盖 80 条样本、
+内嵌 80 张图片，支持逐条填写 `confirmed`/`corrected` 决策并下载兼容
+`apply_review_decisions.py` 的 JSONL。页面只提供人工复核界面，不修改候选 annotation，
+不绕过正式 provenance gate。本阶段新增 1 个工作流测试，无硬件测试累计 `78/78` 通过。

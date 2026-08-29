@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.build_label_review_sheets import _resolve_image
 from scripts.build_review_package import build_review_package
 from scripts.apply_review_decisions import apply_review_decisions, create_decision_template
+from scripts.build_review_html import build_review_html
 from scripts.finalize_review_package import finalize_review_package
 from scripts.inspect_review_package import inspect_review_package
 
@@ -450,6 +451,55 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertFalse(summary["ready_for_apply"])
         self.assertEqual(record["review_status"], "candidate")
         self.assertIsNone(record["human_assessment"])
+
+    def test_build_review_html_embeds_images_and_candidate_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            image_root = root / "images"
+            image_root.mkdir()
+            image = image_root / "frame.jpg"
+            image.write_bytes(b"fake-jpeg")
+            review = root / "error-review.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "case_id": "sample-1",
+                                "image_ref": "frame.jpg",
+                                "source_group_id": "group-1",
+                                "split": "train",
+                                "review_priority": "high",
+                                "candidate_assessment": {
+                                    "schema_version": "parking_risk_v1",
+                                    "risk_level": "medium",
+                                    "events": ["narrow_passage"],
+                                    "evidence": ["通行空间较窄。"],
+                                    "driver_advice": ["slow_down"],
+                                },
+                                "model_assessment": None,
+                                "failure": {"category": "json_parse_error"},
+                                "raw_output": "not-json",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            output = root / "review.html"
+            summary = build_review_html(
+                error_review_path=review,
+                image_root=image_root,
+                output_path=output,
+            )
+            document = output.read_text(encoding="utf-8")
+
+        self.assertEqual(summary["sample_count"], 1)
+        self.assertTrue(summary["ready_for_review"])
+        self.assertIn("data:image/jpeg;base64,ZmFrZS1qcGVn", document)
+        self.assertIn("sample-1", document)
+        self.assertIn("review_decisions_batch.jsonl", document)
 
 
 if __name__ == "__main__":

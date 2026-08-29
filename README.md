@@ -322,6 +322,22 @@ Pillow：
   --output-directory reports\label-review-20260830\high-priority-sheets
 ```
 
+如果需要逐条查看 80 条样本并直接填写复核决策，可生成一个完全离线的单文件 HTML
+页面。页面内嵌图片，不需要启动服务或联网；完成后下载的 JSONL 可直接交给
+`apply_review_decisions.py`。页面不会自动把 candidate 变成正式标签：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\build_review_html.py `
+  --error-review reports\label-review-20260830\ps80_candidate_error_review_v1.json `
+  --image-root data\processed\lora\source_images `
+  --output reports\label-review-20260830\ps80_candidate_review.html
+```
+
+浏览器打开 `reports\label-review-20260830\ps80_candidate_review.html`，逐条选择
+`confirmed` 或 `corrected`，必要时填写人工修正后的风险等级、事件、证据、驾驶建议和
+复核说明，然后下载决策 JSONL。建议先处理页面标出的 high-priority 样本，再用
+`--require-complete` 检查 80 条是否全部定稿。
+
 复盘过程中可随时检查完成度；该命令只读 package，并用 `--fail-on-incomplete` 在仍有
 待处理或非法定稿记录时返回退出码 `2`：
 

@@ -1643,3 +1643,15 @@ case、非法 assessment 或不支持的状态都会在写出前失败。`--requ
 
 新增 2 个测试后，项目无硬件测试累计为 `77/77`；正式训练仍需先生成真实的
 `human_confirmed_v1` 数据。
+
+## 31. 离线 HTML 人工复核页面（2026-08-30）
+
+为支持 80 条候选结果的实际人工复盘，新增 `scripts/build_review_html.py`。脚本读取
+错误复核清单和本地图片目录，生成一个图片内嵌的单文件 HTML；当前实际生成页面
+`reports/label-review-20260830/ps80_candidate_review.html`，包含 80 个 case 和 80 张
+图片，不依赖本地服务或网络。
+
+页面支持按条目填写 `confirmed` 或 `corrected`，并编辑结构化
+`human_assessment` 与 `review_note`。下载的 JSONL 与 `apply_review_decisions.py` 的
+输入契约一致；未完成条目不会被导出为 finalized，页面也不会自动创建
+`human_confirmed_v1`。新增 1 个工作流测试后，无硬件测试累计 `78/78` 通过。

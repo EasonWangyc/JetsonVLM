@@ -1238,3 +1238,17 @@ train/validation split、图片、workload 和模型目录，不导入 CUDA 训�
 `label_source=codex_visual_review_v1_single_pass` 与配置要求的
 `human_confirmed_v1` 不一致而拒绝，确认 provenance gate 生效。本轮无硬件测试累计
 `77/77` 通过。
+
+### 2.19 2026-08-30：离线 HTML 人工复核页面
+
+为降低人工逐条编辑 80 行 JSONL 的操作成本，新增 `scripts/build_review_html.py`。该脚本
+读取 `reports/label-review-20260830/ps80_candidate_error_review_v1.json`，递归解析本地
+图片并生成单文件 HTML；当前页面已覆盖 80 个 case、内嵌 80 张图片，可在无服务、无联网
+条件下打开和复核。
+
+页面对每条记录提供 candidate assessment、model/failure、复核优先级和原始输出，并
+支持填写 `confirmed`/`corrected`、修正后的风险等级/事件/证据/驾驶建议及复核说明。
+下载结果固定为 `case_id`、`review_status`、`human_assessment`、`review_note` 四个
+字段，可直接交给 `scripts/apply_review_decisions.py`；页面不自动定稿，也不绕过
+`human_confirmed_v1` provenance gate。本轮新增 1 个 HTML 工作流测试，无硬件测试累计
+`78/78` 通过。

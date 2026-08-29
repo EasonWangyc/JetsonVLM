@@ -400,3 +400,12 @@ micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`。合计
 该结果说明候选 LoRA 的服务器训练与全量开发集评测流程已经跑通，但事件识别仍不达标，
 且参考标签仍为 Codex 候选结果。人工终审前不应将该 adapter 或 merged checkpoint 作为
 正式模型继续量化部署。
+
+### 7.8 80 条样本离线人工复核入口
+
+新增 `scripts/build_review_html.py`，将 80 条错误复核记录和对应图片打包为单文件页面，
+当前实际生成 `reports/label-review-20260830/ps80_candidate_review.html`。页面支持逐条
+填写确认或修正结果，并导出 `apply_review_decisions.py` 可消费的 JSONL；导出和应用仍
+要求人工明确完成 `confirmed`/`corrected`，不会把 Codex 候选结果自动升级为
+`human_confirmed_v1`。新增功能后无硬件测试累计 `78/78` 通过，下一阶段是实际人工复核
+并运行完整 provenance gate。
