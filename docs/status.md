@@ -3,7 +3,7 @@
 ## 2026-08-29 现场复核 checkpoint
 
 - 本地仓库已提交 Codex-assisted review workflow；当前新增的复核审计改动尚未提交。
-- 无硬件测试为 `55/55` 通过；80 条 Codex 候选 package 可由
+- 无硬件测试为 `58/58` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。
 - 已使用真实候选 annotation 完成一次数据生成 dry-run/校验：LoRA 共 64 条（48 train、

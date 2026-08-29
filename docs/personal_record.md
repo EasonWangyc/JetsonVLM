@@ -1017,3 +1017,34 @@ PyTorch `2.12.0+cu130`、Transformers `5.9.0` 和 datasets `4.8.5`。量化边�
 
 详细命令、原始报告和证据索引见 `docs/record.md`、`docs/status.md` 和
 `docs/progress.md`。
+
+### 2.10 2026-08-29：复核 provenance、数据拆分与 Jetson 启动诊断
+
+本轮将 80 条 Codex 单轮视觉复核候选标注重新固化为
+`reports/label-review-20260829/ps80_codex_review_package_v1.jsonl`，并使用当前入口
+完成候选数据生成验证。结果为 64 条 LoRA 数据（48 train、16 validation）和 16 条
+INT4 calibration；LoRA 与 calibration 来源组交集为 0，开发数据与冻结测试集来源组
+交集为 0。工作负载 identity 以及四份输入文件的 SHA-256 写入了
+`ps80_candidate_dataset_summary.json`。
+
+复核定稿入口新增以下约束：
+
+- 候选和人工 `ParkingAssessment` 均必须通过严格 schema；
+- `confirmed` 必须与候选完全一致，`corrected` 必须发生实际变化且填写 `review_note`；
+- 定稿摘要输出风险等级准确率、事件 micro-precision/recall/F1、整体 assessment、
+  风险等级、事件集合、证据和驾驶建议的修正统计；
+- `prepare_reviewed_lora_dataset.py` 要求 CLI 显式提供 `--label-source`，避免人工金标
+  被错误标记为 Codex 候选。
+
+本轮无硬件测试增至 58 个并全部通过。Edge-LLM 服务入口新增
+`--edge-llm-root` 和 `--plugin-path`，自动加入源码/pybind 路径并发现插件。
+
+Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，有 33 项未提交或
+未跟踪改动，未执行覆盖或清理。临时补充 venv CUDA 库路径后，PyTorch `2.9.1`、CUDA
+`12.6` 和 Transformers `4.57.6` 可导入。服务启动依次暴露了源码路径缺失、插件路径
+缺失和图形桌面状态下 visual engine 申请约 `811 MiB` 连续内存失败三个问题；服务当前
+未运行。尝试用 `ubuntu` 账号切换 headless 时因 sudo 需要密码被拒绝，root SSH 也未配置，
+因此未继续修改系统状态。
+
+当前下一步仍是人工终审 80 条候选标注；终审完成后使用 `human_confirmed_v1` 生成训练
+和校准数据，再申请 Jetson headless/sudo 条件完成新的板端 smoke。
