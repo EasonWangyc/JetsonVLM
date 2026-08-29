@@ -31,6 +31,10 @@
 - 页面支持可选的 `--reference-annotations` 只读输入；当前实际使用
   `data/annotations/ps80_teacher_v1.jsonl`，80/80 case 对齐并显示 teacher/reference、
   Codex candidate 和模型输出三方上下文。teacher 仅用于复核上下文，不是人工金标。
+- 正式 `ps64_reviewed_v1` 的后处理配置已补齐：合并、FP16 ONNX 导出、人工确认校准的
+  INT4 AWQ、INT4 ONNX 导出、FP16/INT4 LLM engine 构建，以及对应 Jetson `ps20_pilot_v1`
+  study。所有 flow 仍以 `human_confirmed_v1` 数据和 merged checkpoint 的实际存在为
+  前置条件。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 

@@ -1260,3 +1260,15 @@ train/validation split、图片、workload 和模型目录，不导入 CUDA 训�
 页面另支持 `--reference-annotations` 展示只读 teacher 对照。本次用
 `ps80_teacher_v1.jsonl` 实测 80/80 case 对齐，使人工复核可以同时查看 teacher、Codex
 candidate 和模型输出；teacher 仍不被当作人工金标或最终训练标签。
+
+### 2.20 2026-08-30：补齐正式 ps64 后处理配置
+
+审计发现正式 `ps64_reviewed_v1` 已有训练、合并和服务器 study，但缺少合并后的导出、
+量化、engine 构建和 Jetson study 配置。本轮新增 FP16 ONNX 导出、人工确认校准的 INT4
+AWQ、INT4 ONNX 导出、FP16/INT4 LLM engine 构建，以及对应的 Jetson `ps20_pilot_v1`
+study。量化配置固定使用未来的 `ps16_human_confirmed_v1.jsonl`，因此当前 readiness
+仍未就绪，但人工终审完成后可以沿配置顺序直接执行。
+
+新增配置均通过 `ExternalFlowPlan` 解析测试，并固定 TensorRT Edge-LLM commit、模型
+revision、输入长度 768、KV cache 1024 和输出目录；没有修改现有候选产物或远端 Jetson
+工作树。

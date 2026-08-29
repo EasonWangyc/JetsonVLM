@@ -3959,3 +3959,12 @@ checkpoint 作为正式模型导出和部署。
 `candidate` 状态，也不降低人工终审门禁。
 HTML 入口还支持可选的 `--reference-annotations`，本次以 `ps80_teacher_v1.jsonl` 完成
 80/80 case 对齐校验并展示三方对照；teacher 只作为复核上下文。
+
+### 29.5 正式 ps64 后处理配置
+
+为避免人工终审完成后还需要重新设计部署流程，新增 `ps64_reviewed_v1` 的 FP16 ONNX
+导出、人工确认校准 INT4 AWQ、INT4 ONNX 导出、FP16/INT4 LLM engine 构建和 Jetson
+`ps20_pilot_v1` study 配置。量化 flow 指向未来的
+`data/processed/calibration/ps16_human_confirmed_v1.jsonl`，各 flow 均固定模型和
+Edge-LLM revision，并由 readiness 检查输入和输出状态。当前这些配置只完成静态验证，
+不代表正式模型已经训练或部署。

@@ -432,6 +432,19 @@ $env:PYTHONPATH = "src"
 `configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps20_pilot.json` 做服务器
 冻结集验证。正式复现仍使用 `train_qwen3_vl_2b_lora_ps64_reviewed_v1.json`。
 
+正式复核完成后，`ps64_reviewed_v1` 的后处理配置已经补齐：
+
+- `configs/flows/merge_qwen3_vl_2b_lora_ps64_reviewed_v1.json`：合并基础模型和 LoRA；
+- `configs/flows/export_qwen3_vl_2b_lora_ps64_reviewed_v1.json`：导出 FP16 ONNX；
+- `configs/flows/quantize_qwen3_vl_2b_lora_ps64_reviewed_v1.json`：使用
+  `ps16_human_confirmed_v1.jsonl` 做独立 INT4 AWQ 校准；
+- 对应的 INT4 导出和 FP16/INT4 LLM engine 构建 flow；
+- `configs/studies/jetson_edgellm_lora_ps64_reviewed_v1_ps20_pilot.json` 与严格 JSON
+  INT4 study：完成后可在同一 `ps20_pilot_v1` 冻结集上验收。
+
+这些配置只声明人工确认后的执行路径；校准输入和模型输出不存在时，flow readiness 会
+明确返回未就绪，不会提前启动量化或 engine 构建。
+
 定稿脚本会同时输出 `candidate_human_comparison`，包括候选风险等级准确率、事件
 micro-precision、micro-recall、micro-F1，以及整体标注、风险等级、事件集合、证据和
 驾驶建议的修正数量。`confirmed` 要求人工结果与候选结果完全一致；`corrected` 要求

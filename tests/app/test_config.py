@@ -67,6 +67,18 @@ class AppTests(unittest.TestCase):
             / "studies"
             / "jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json"
         )
+        reviewed_edge_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "jetson_edgellm_lora_ps64_reviewed_v1_ps20_pilot.json"
+        )
+        reviewed_int4_edge_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "jetson_edgellm_int4_awq_ps64_reviewed_v1_ps20_pilot_strict_json.json"
+        )
 
         self.assertEqual(transformers_config.runtime.backend, "transformers")
         self.assertEqual(
@@ -110,6 +122,20 @@ class AppTests(unittest.TestCase):
             "parking_risk_v2_strict_json",
         )
         self.assertEqual(strict_json_edge_config.runtime.precision, "int4_awq")
+        self.assertEqual(
+            reviewed_edge_config.runtime.adapter_revision,
+            "ps64-reviewed-v1-r16-merged",
+        )
+        self.assertEqual(reviewed_edge_config.runtime.precision, "fp16+lora-merged")
+        self.assertEqual(
+            reviewed_int4_edge_config.study.workload.workload_id,
+            "parking_risk_v2_strict_json",
+        )
+        self.assertEqual(reviewed_int4_edge_config.runtime.precision, "int4_awq")
+        self.assertEqual(
+            reviewed_int4_edge_config.runtime.adapter_revision,
+            "ps64-reviewed-v1-int4-awq",
+        )
         self.assertEqual(edge_ps20_config.study.power_mode, "15W_MODE_0")
         self.assertEqual(
             edge_ps20_config.manifest_path.name,

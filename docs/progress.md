@@ -413,3 +413,11 @@ micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`。合计
 仍不等于 finalized 决策。
 页面可额外加载 `ps80_teacher_v1.jsonl` 作为只读 reference；实际生成时 80/80 case_id
 对齐，人工可以并列查看 teacher、Codex candidate 和模型输出，reference 不参与正式定稿。
+
+### 7.9 正式复核后处理流水线配置
+
+针对人工确认后的 `ps64_reviewed_v1` 路径，补齐了训练/合并之后缺少的配置：FP16 ONNX
+导出、基于 `ps16_human_confirmed_v1.jsonl` 的 INT4 AWQ、INT4 ONNX 导出、FP16 与 INT4
+LLM engine 构建，以及两个 Jetson `ps20_pilot_v1` study 配置。配置统一固定模型
+revision、Edge-LLM revision、`i768/k1024` 约束和输出路径；人工数据或上游 checkpoint
+缺失时只会显示 readiness 不满足，不会隐式执行外部流程。

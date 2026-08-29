@@ -1664,3 +1664,14 @@ review package 才会发生变化。
 `data/annotations/ps80_teacher_v1.jsonl`，实际校验 80/80 case_id 与错误复核清单一致，
 并将 teacher 结果作为只读对照展示；该输入不参与人工决策导出，也不改变最终 provenance
 gate。
+
+## 32. 正式 ps64 后处理 flow 配置（2026-08-30）
+
+审计正式路径后发现，`ps64_reviewed_v1` 已有 LoRA 训练、合并和服务器研究配置，但缺少
+后续部署链路。新增配置覆盖：merged checkpoint 的 FP16 ONNX 导出、以
+`ps16_human_confirmed_v1.jsonl` 为输入的 LLM backbone INT4 AWQ、INT4 ONNX 导出、FP16
+和 INT4 LLM engine 构建，以及对应的 Jetson Edge-LLM FP16/严格 JSON INT4 study。
+
+这些 flow 固定 Qwen3-VL revision `89644892...`、TensorRT Edge-LLM commit
+`7f061f21...`、`i768/k1024` 和独立输出目录。当前人工校准文件和正式 adapter 尚未形成，
+因此 readiness 未就绪；配置解析与路径/版本约束已由无硬件测试覆盖。

@@ -96,6 +96,46 @@ class ExternalFlowPlanTests(unittest.TestCase):
             any("codex_candidate_v1" in path.as_posix() for path in plan.expected_outputs)
         )
 
+    def test_loads_formal_post_review_ps64_flows(self) -> None:
+        expected = {
+            "export_qwen3_vl_2b_lora_ps64_reviewed_v1.json": "export_model",
+            "quantize_qwen3_vl_2b_lora_ps64_reviewed_v1.json": "quantize_model",
+            "export_qwen3_vl_2b_lora_ps64_reviewed_v1_int4_awq.json": "export_model",
+            "build_qwen3_vl_2b_lora_ps64_reviewed_v1_fp16_llm_engine_i768_k1024.json": "build_engine",
+            "build_qwen3_vl_2b_lora_ps64_reviewed_v1_int4_awq_llm_engine_i768_k1024.json": "build_engine",
+        }
+        plans = {
+            filename: ExternalFlowPlan.load(
+                REPOSITORY_ROOT / "configs" / "flows" / filename
+            )
+            for filename in expected
+        }
+
+        for filename, stage in expected.items():
+            with self.subTest(filename=filename):
+                plan = plans[filename]
+                self.assertEqual(plan.stage, stage)
+                self.assertNotIn("replace-with-", " ".join(plan.command))
+                self.assertFalse(plan.readiness_mapping()["ready"])
+
+        quantize_plan = plans["quantize_qwen3_vl_2b_lora_ps64_reviewed_v1.json"]
+        self.assertIn("ps16_human_confirmed_v1.jsonl", " ".join(quantize_plan.command))
+        self.assertIn(
+            "int4_awq",
+            " ".join(str(path) for path in quantize_plan.expected_outputs),
+        )
+
+        fp16_build = plans[
+            "build_qwen3_vl_2b_lora_ps64_reviewed_v1_fp16_llm_engine_i768_k1024.json"
+        ]
+        int4_build = plans[
+            "build_qwen3_vl_2b_lora_ps64_reviewed_v1_int4_awq_llm_engine_i768_k1024.json"
+        ]
+        self.assertIn("--enable-weight-streaming", fp16_build.command)
+        self.assertNotIn("--enable-weight-streaming", int4_build.command)
+        self.assertIn("768", fp16_build.command)
+        self.assertIn("1024", int4_build.command)
+
     def test_loads_pinned_qwen3_vl_fp16_deployment_flows(self) -> None:
         expected = {
             "export_qwen3_vl_2b_fp16.json": "export_model",
