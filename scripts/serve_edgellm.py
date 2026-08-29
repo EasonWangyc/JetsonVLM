@@ -40,6 +40,13 @@ def serve_prebuilt_engines(
 ) -> None:
     """加载预构建 engine，避免在 8GB Jetson 上隐式执行模型导出。"""
     try:
+        import uvicorn  # noqa: F401
+    except ImportError as error:
+        raise RuntimeError(
+            "无法导入 uvicorn；请在当前 Jetson Python 环境安装 uvicorn，"
+            "并确认其 site-packages 位于 PYTHONPATH"
+        ) from error
+    try:
         from experimental.server import LLM
     except ImportError as error:
         raise RuntimeError(

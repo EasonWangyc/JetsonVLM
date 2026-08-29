@@ -257,6 +257,7 @@ export EDGE_LLM_ROOT=/home/ubuntu/TensorRT-Edge-LLM
 export PYTHONPATH=$EDGE_LLM_ROOT:$PWD/src
 export EDGELLM_PLUGIN_PATH=$EDGE_LLM_ROOT/build/libNvInfer_edgellm_plugin.so
 export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export PYTHONPATH=$JETSON_PY_CUDA_LIB:$EDGE_LLM_ROOT:$EDGE_LLM_ROOT/build/pybind:$PWD/src
 export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:$EDGE_LLM_ROOT/build:$LD_LIBRARY_PATH
 
 .venv-jetson/bin/python scripts/serve_edgellm.py \
@@ -269,7 +270,8 @@ export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:$EDGE_LLM_ROOT/build:$LD_LIBRARY_PATH
 `--weight-streaming-budget-bytes 0` 依赖项目保存的 runtime 补丁，在创建 context 前
 调用 `setWeightStreamingBudgetV2(0)`。不设置预算时，TensorRT 会尝试让约 3.44 GiB
 streamable weights 全部驻留 GPU，并在本设备上 OOM。0 预算能够运行，但会显著降低
-生成速度；后续应在 INT4 或更大可用内存条件下重新调优。
+生成速度；后续应在 INT4 或更大可用内存条件下重新调优。现有 INT4 engine 未按
+weight streaming 构建，启动时不要传该参数。
 
 另开一个 Jetson SSH 终端验证：
 

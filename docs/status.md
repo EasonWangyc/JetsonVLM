@@ -2,8 +2,8 @@
 
 ## 2026-08-29 现场复核 checkpoint
 
-- 本地仓库已提交 Codex-assisted review workflow 和训练 provenance 防误用改动；当前
-  `main` 比 `origin/main` 超前 3 个本地提交，未执行 push。
+- 本地仓库已提交 Codex-assisted review workflow、训练 provenance 防误用和部署预检改动；
+  当前 `main` 比 `origin/main` 超前 7 个本地提交，未执行 push。
 - 无硬件测试为 `61/61` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。
@@ -36,6 +36,12 @@
   engine、tokenizer 和 base context 可以加载，但图形桌面状态下 visual engine 申请约
   `811 MiB` 连续内存失败。该结果属于资源条件失败，不改变既有 headless 条件下的
   `20/20` FP16 成功证据。
+- 2026-08-30 对领域 INT4 做了新的真实 smoke：去掉未启用的 weight-streaming 参数，
+  显式加入 Jetson venv `site-packages` 后，LLM/visual engine、tokenizer、CUDA graph 和
+  Uvicorn 均成功启动，`/health` 返回 HTTP 200；1 条单图请求也返回 HTTP 200 和 91 tokens，
+  但严格 JSON 因 ```json 代码围栏解析失败。临时服务已停止，原始日志归档于
+  `reports/jetson-int4-smoke-20260830.log`，SHA-256 为
+  `9ee94b7b331368c7e7204288938eadd1bdd3f81e05e0c97209210bd7d77534b5`。
 
 ## 已实现并由无硬件测试覆盖
 

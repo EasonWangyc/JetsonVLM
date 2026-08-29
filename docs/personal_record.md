@@ -1078,9 +1078,28 @@ Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，
 GPU runtime。已在 Jetson 现有 `qwen3_vl_2b_fp16_i768_k1024` engine、
 `/home/ubuntu/TensorRT-Edge-LLM/build/pybind` 和
 `libNvInfer_edgellm_plugin.so` 上完成静态路径核对；实际服务仍因图形桌面统一内存条件
-未重新启动，因此没有新增运行成功结论。
+未重新启动；随后新增的真实 INT4 smoke 结果见 2.13。
 
 同一入口现支持 LLM 与 visual engine 分目录传入，解决 LoRA/INT4 仅生成 LLM engine、
 而视觉 engine 复用 FP16 版本时无法直接启动的问题。该模式已由无硬件测试覆盖；在
 Jetson 上已核对 FP16、LoRA FP16、普通 INT4、领域 INT4 四种组合的 LLM/visual 目录，
 四种预检均返回 `ready=true`；下一步仍需在 headless 条件下进行真实加载。
+
+### 2.13 2026-08-30：领域 INT4 真实 HTTP smoke
+
+在 Jetson 图形桌面保持运行的条件下，使用领域 INT4 LLM engine
+`qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024/llm`，复用 FP16 visual engine，显式传入
+venv `site-packages`、Edge-LLM root、pybind 和 plugin 路径，并省略未启用的 weight
+streaming 参数。实际加载日志确认 LLM engine、tokenizer、visual runner 和 CUDA graph
+均初始化成功，Uvicorn 监听 `127.0.0.1:8000`，`/health` 返回 HTTP 200。
+
+随后通过项目 `analyze_image` 入口发送 1 张 `ps2.0` 图片，请求返回 HTTP 200 和 91
+output tokens。模型输出风险等级为 `low`、事件为 `vehicle_near_maneuver_path`，但原始
+内容被 ```json 代码围栏包裹，严格 `ParkingAssessment` 解析因此记录为
+`json_parse_error`。这证明领域 INT4 的部署和推理链路已经实际打通，同时保留了格式
+遵循失败事实，没有把该请求写成业务成功。
+
+原始日志已归档至 `reports/jetson-int4-smoke-20260830.log`，SHA-256 为
+`9ee94b7b331368c7e7204288938eadd1bdd3f81e05e0c97209210bd7d77534b5`。临时服务已停止，
+没有修改系统服务或远端仓库。后续应优先修正/重新验证严格 JSON 生成，再运行完整
+`ps20_pilot` Study；FP16 图形桌面下的连续内存 OOM 仍独立存在。

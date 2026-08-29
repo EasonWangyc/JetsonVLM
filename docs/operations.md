@@ -58,6 +58,7 @@ TensorRT Edge-LLM revision 为准。
 ```bash
 cd /home/ubuntu/JetsonVLM
 export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export PYTHONPATH=$PWD/.venv-jetson/lib/python3.10/site-packages:/home/ubuntu/TensorRT-Edge-LLM:$PWD/src
 export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:/home/ubuntu/TensorRT-Edge-LLM/build:$LD_LIBRARY_PATH
 
 .venv-jetson/bin/python scripts/serve_edgellm.py \
@@ -69,6 +70,9 @@ export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:/home/ubuntu/TensorRT-Edge-LLM/build:
 
 预检返回 `ready=true` 只证明文件和路径齐全，不代表统一内存、CUDA graph 或 HTTP
 服务一定能启动；这些仍需实际板端加载和请求验证。
+
+如果 engine 构建时未启用 weight streaming（现有 INT4 engine 属于此类），启动时不要
+传 `--weight-streaming-budget-bytes`；该参数只适用于对应构建选项已启用的 engine。
 
 LoRA 或 INT4 只有 LLM engine 时，可将其与 FP16 visual engine 分开指定；服务会把两个
 目录传给同一个 Edge-LLM 实例：

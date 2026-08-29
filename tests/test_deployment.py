@@ -187,6 +187,7 @@ class DeploymentTests(unittest.TestCase):
             {
                 "experimental": experimental_module,
                 "experimental.server": server_module,
+                "uvicorn": ModuleType("uvicorn"),
             },
         ):
             serve_prebuilt_engines(
