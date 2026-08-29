@@ -16,13 +16,13 @@
   `d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
   `d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
 - 新增 `scripts/apply_review_decisions.py`，支持按批次应用人工 `confirmed`/`corrected`
-  决策，保留未复核记录，并在 `--require-complete` 下强制 80 条全部定稿；76 个无硬件
+  决策，保留未复核记录，并在 `--require-complete` 下强制 80 条全部定稿；77 个无硬件
   测试通过。工具还支持生成全部 case 的待编辑决策模板；该模板不改变候选 annotation，
   也不绕过最终 provenance gate。
 - `scripts/finetune_qwen3_vl_lora.py` 新增 `--validate-only`，可在不加载 CUDA 或模型前
   校验数据来源、schema、split、图片、workload 和模型路径。候选配置实测通过；当前
   `ps64_reviewed_v1` 正式配置因数据仍为 Codex 候选来源而在模型加载前拒绝。无硬件测试
-  已累计 `76/76` 通过。
+  已累计 `77/77` 通过。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 

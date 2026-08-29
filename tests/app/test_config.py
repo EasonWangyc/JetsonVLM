@@ -120,6 +120,39 @@ class AppTests(unittest.TestCase):
             "ps20_pilot_v1.jsonl",
         )
 
+    def test_loads_candidate_80_server_study_configs(self) -> None:
+        train_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json"
+        )
+        validation_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "server_transformers_lora_ps64_codex_candidate_v1_ps80_validation_strict_json.json"
+        )
+
+        self.assertEqual(train_config.study.split.value, "train")
+        self.assertEqual(validation_config.study.split.value, "validation")
+        self.assertEqual(
+            train_config.study.workload.workload_id,
+            "parking_risk_v2_strict_json",
+        )
+        self.assertEqual(
+            validation_config.study.workload.identity,
+            train_config.study.workload.identity,
+        )
+        self.assertEqual(
+            train_config.runtime.options["adapter_path"],
+            "artifacts/adapters/qwen3_vl_2b_parking_lora_ps64_codex_candidate_v1",
+        )
+        self.assertEqual(
+            validation_config.runtime.options["adapter_path"],
+            train_config.runtime.options["adapter_path"],
+        )
+
     def test_build_runtime_rejects_unknown_options(self) -> None:
         config = RuntimeConfig(
             backend="transformers",

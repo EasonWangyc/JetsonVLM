@@ -1641,5 +1641,5 @@ case、非法 assessment 或不支持的状态都会在写出前失败。`--requ
 `codex_visual_review_v1_single_pass`、配置要求 `human_confirmed_v1`，在模型加载前
 拒绝。后者是预期门禁，不消耗 GPU 资源。
 
-新增 2 个测试后，项目无硬件测试累计为 `76/76`；正式训练仍需先生成真实的
+新增 2 个测试后，项目无硬件测试累计为 `77/77`；正式训练仍需先生成真实的
 `human_confirmed_v1` 数据。

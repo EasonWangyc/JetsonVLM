@@ -1237,4 +1237,4 @@ train/validation split、图片、workload 和模型目录，不导入 CUDA 训�
 返回 `validated`；当前 `ps64_reviewed_v1` 配置因实际数据的
 `label_source=codex_visual_review_v1_single_pass` 与配置要求的
 `human_confirmed_v1` 不一致而拒绝，确认 provenance gate 生效。本轮无硬件测试累计
-`76/76` 通过。
+`77/77` 通过。
