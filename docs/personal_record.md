@@ -878,3 +878,142 @@ o_proj: 2048 → 2048   (16 头)    参数 = 16×(2048+2048) = 65,536
 ```
 
 共28层decoder layer，总参数为：`229376 * 28 = 6,422,528`，约占总参数量的`6,422,528 / 2,133,954,560 = 0.3010%`。
+
+### 2.6 2026-08-17：候选标注、数据拆分与 Transformers profiling
+
+前面的 LoRA 记录基于弱监督标签和 64/16 的训练验证拆分。后续实验发现，80 条teacher 标签的 `risk_level` 全部为 `low`，其中 65 条包含 `narrow_passage`，该标签分布会诱发模型的类别偏置。因此新增了一轮候选视觉复核，并将数据状态与早期弱监督
+实验区分记录。
+
+候选复核的主要结果：
+
+- 复核对象为 PS2.0 `training` 中 80 个独立来源组，每个来源组选择一张图片。
+- 相对 teacher 标签，33 条风险等级和 77 条事件集合发生变化。
+- 当前拆分为 48 条 LoRA train、16 条 validation、16 条独立 INT4 calibration。
+- 三个开发 split 与冻结的 20 张 pilot 测试集均没有 `source_group_id` 交集。
+- 当前标注来源为 `codex_visual_review_v1_single_pass`，属于候选标注，不是人工双人金标。
+
+同时完成了 Jetson Transformers FP16 的独立 profiling。未插桩基线在 20 个测试样本上
+全部完成，严格 JSON 有效率为 100%，端到端 p50/p90/p99 为 `9.38/14.12/27.94 s`，
+风险等级准确率为 `35%`，事件 micro-F1 为 `0.341`。阶段插桩结果如下：
+
+| 阶段 | p50 |
+|---|---:|
+| 图像预处理 | `27.60 ms` |
+| 视觉编码 | `225.11 ms` |
+| LLM prefill | `626.51 ms` |
+| LLM decode | `17.04 s` |
+
+profiling 在 hook 边界执行 CUDA 同步，因此插桩绝对时延不用于计算 runtime 加速比。
+结果显示 decode 是主要耗时阶段，预处理不是当前优化重点。
+
+### 2.7 2026-08-17：复核数据 LoRA 重训
+
+服务器训练环境为 RTX 4090 D，使用 PyTorch `2.8.0+cu128`、Transformers `5.9.0`、
+PEFT `0.18.0` 和 Accelerate `1.10.1`。基础模型仍固定为：
+
+```text
+Qwen/Qwen3-VL-2B-Instruct
+revision: 89644892e4d85e24eaac8bacfd4f463576704203
+```
+
+为了缓解 teacher 标签全部为 `low` 的偏置，训练脚本增加了
+`non_low_oversampling_factor`，仅对 train split 中非 `low` 样本进行复制，不修改
+validation、calibration 或 test 数据。本轮 factor 为 2，48 个唯一训练样本扩展为 63
+条有效训练记录。
+
+三轮训练对照如下：
+
+| 训练版本 | 唯一/有效 train | epoch / step | validation loss | 训练耗时 | 峰值 CUDA |
+|---|---:|---:|---:|---:|---:|
+| e1 | 48/48 | 1 / 12 | 1.2645 | 21.65 s | 5.249 GiB |
+| e3 未平衡 | 48/48 | 3 / 36 | 0.8501 | 57.26 s | 5.273 GiB |
+| e3、non-low x2 | 48/63 | 3 / 48 | 0.7220 | 80.84 s | 5.273 GiB |
+
+冻结 20 样本的服务器结果：
+
+| 模型状态 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 现象 |
+|---|---:|---:|---:|---|
+| e1 adapter | 45% | 10% | 0 | 11 条输出在 256 token 处截断 |
+| e3 未平衡 adapter | 100% | 35% | 0 | 20 条均预测为 `low` |
+| e3、non-low x2 adapter | 100% | 50% | 0.182 | 恢复少量事件预测 |
+| e3、non-low x2 merged | 100% | 45% | 0.100 | 与在线 adapter 结果不一致 |
+
+本轮说明 validation loss 下降不能替代冻结测试集质量评测。过采样缓解了全 `low`
+塌缩，但事件 F1 仍低于早期弱监督 LoRA 的 `0.389`。adapter 与 merged 的差异还需要
+通过逐样本生成结果、权重合并过程和推理配置继续定位。
+
+### 2.8 2026-08-17：领域 INT4 AWQ 重新量化与 Jetson 复测
+
+量化环境使用 TensorRT Edge-LLM `v0.9.1` 对应工具链、ModelOpt `0.44.0`、
+PyTorch `2.12.0+cu130`、Transformers `5.9.0` 和 datasets `4.8.5`。量化边界固定为：
+
+- LLM backbone：W4A16 AWQ，group size 128；
+- visual：FP16；
+- `lm_head`：FP16；
+- KV cache：不量化。
+
+本轮使用 16 条无来源组泄漏的泊车领域文本作为 calibration，数据 SHA-256 为：
+
+```text
+0949bfb7649f74a0a537781e5e46363d9b76cb3b046ecf4b91b6cd02171f77f3
+```
+
+量化权重、ONNX 和 Jetson engine 均生成成功。Jetson 使用的 TensorRT Edge-LLM
+固定 commit 为 `7f061f21f0a581ba234a1e233c9315b89d8e47d6`，新 LLM engine SHA-256 为：
+
+```text
+589d8ba247a93cdf794c86697bb5a5d5fe3387fee812744c51d09806912b3026
+```
+
+冻结 20 样本的板端结果：
+
+| 指标 | 新领域 INT4 |
+|---|---:|
+| 后端完成 | 20/20 |
+| 严格 JSON 有效率 | 4/20（20%） |
+| 风险等级准确率 | 15% |
+| 事件 micro-F1 | 0 |
+| 端到端 p50 | 10.68 s |
+| 聚合输出速率 | 7.32 token/s |
+| RAM 峰值 | 5354 MB |
+| GPU 利用率均值 | 81.88% |
+| 输入功耗均值 | 9.26 W |
+| GPU 峰值温度 | 62.97 °C |
+
+20 条请求均获得后端响应，但其中 16 条输出被 Markdown `json` 代码围栏包裹，
+不满足项目规定的严格 JSON 协议。评测器保留严格失败，不自动剥离代码围栏，以避免
+掩盖量化后的格式遵循退化。
+
+与旧的 128 条通用新闻文本校准 INT4 相比，新领域校准版本的性能基本相同，未带来
+可确认的质量或性能收益。该实验被记录为“量化部署成功、质量验收失败”的负向结果，
+不替换旧 INT4 作为当前性能对照。
+
+### 2.9 当前状态与后续工作
+
+截至 2026-08-17，项目已经完成以下端到端链路：
+
+```text
+固定模型 revision
+  -> LoRA 训练 / 合并
+  -> TensorRT Edge-LLM ONNX 导出
+  -> Jetson engine 构建
+  -> Edge-LLM HTTP 服务
+  -> ParkSight Adapter
+  -> StudyReport 与 tegrastats 证据
+```
+
+当前主要限制如下：
+
+1. 20 张冻结测试集适合流程验收，样本规模不足以支撑稳定的领域质量结论。
+2. 80 条复核标注仍是单轮候选标注，需要人工终审并补充更多六类风险事件。
+3. 新 reviewed LoRA 的事件 micro-F1 低于旧弱监督 LoRA，不能描述为整体质量提升。
+4. 新领域 INT4 的严格 JSON 有效率降至 20%，格式问题和任务质量问题仍未解决。
+5. Jetson 8 GB 统一内存余量很小，FP16 engine 运行可能需要 headless、内存 compaction
+   和临时 swap。
+
+下一阶段应先完成候选数据人工终审与扩充，再在服务器上统一复验 Base、LoRA adapter
+和 merged 模型；质量结果稳定后，再使用更大、更有代表性的泊车领域 calibration
+重新执行 INT4，并将通过质量验收的版本部署到 Jetson。
+
+详细命令、原始报告和证据索引见 `docs/record.md`、`docs/status.md` 和
+`docs/progress.md`。
