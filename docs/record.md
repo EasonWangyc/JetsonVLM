@@ -3935,3 +3935,15 @@ d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87
 
 在人工终审完成前，不将 Codex 候选 annotation、candidate adapter 或 candidate merged
 checkpoint 作为正式模型导出和部署。
+
+### 29.3 LoRA 训练前置门禁
+
+训练入口新增 `--validate-only`，用于在不加载 CUDA 或模型前检查数据路径、workload、
+模型目录、`ParkingAssessment` schema、train/validation split、图片文件和统一
+`label_source`。候选训练配置实测返回 `validated`；当前正式配置
+`qwen3_vl_2b_lora_ps64_reviewed_v1.json` 实测在模型加载前拒绝，因为其数据文件仍记录
+`codex_visual_review_v1_single_pass`，而配置要求 `human_confirmed_v1`。这使正式训练
+门禁可以在资源消耗前被验证，也不会把候选标签误当成人工确认标签。
+
+该变更新增 2 个无模型测试，项目无硬件测试累计 `76/76` 通过。人工终审完成并重新
+生成标准数据后，应先执行 `--validate-only`，再启动正式训练。

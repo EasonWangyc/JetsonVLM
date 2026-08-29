@@ -388,6 +388,19 @@ package。决策 JSONL 每行只包含 `case_id`、`review_status`、`human_asse
 split 校验，也不会被误用于正式训练；只有将 package 定稿为 `confirmed`/`corrected`、
 生成 `human_confirmed_v1` 数据并更新训练配置后，训练流程才会继续。
 
+训练前可以先使用低成本门禁，不加载 CUDA 或模型：
+
+```powershell
+$env:PYTHONPATH = "src"
+& ".\.venv\Scripts\python.exe" scripts\finetune_qwen3_vl_lora.py `
+  --config configs\training\qwen3_vl_2b_lora_ps64_reviewed_v1.json `
+  --validate-only
+```
+
+该命令会校验数据来源、assessment schema、train/validation split、图片、workload 和
+模型路径。当前 `ps64_reviewed_v1` 文件仍携带 Codex 候选来源，因此实测会在模型加载
+前失败；这属于预期的安全门禁。候选开发配置也可用相同命令验证其输入完整性。
+
 如果需要在人工终审前验证训练链路，可显式使用
 `configs/flows/train_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json`。该配置只允许候选
 来源进入显式命名的 `data/processed/lora/ps64_codex_candidate_v1.jsonl` 数据和

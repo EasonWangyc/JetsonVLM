@@ -1626,3 +1626,20 @@ case、非法 assessment 或不支持的状态都会在写出前失败。`--requ
 人工编辑为 `confirmed` 或 `corrected` 后才能应用。该工具通过 4 个新增工作流测试，
 项目无硬件测试累计 `74/74` 通过；它只管理人工复核状态，不修改候选 annotation，也不
 绕过 `human_confirmed_v1` provenance gate。
+
+## 30. LoRA 训练前置输入门禁（2026-08-30）
+
+为避免外部 flow 的文件 readiness 被误解为“正式训练可执行”，训练入口
+`scripts/finetune_qwen3_vl_lora.py` 新增 `--validate-only`。该模式在不加载 CUDA、PEFT
+或基础模型前，检查 dataset/workload/model 路径、统一 label source、每条
+`ParkingAssessment`、非空 train/validation split 和图片文件。
+
+实测结果：候选配置
+`configs/training/qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 返回 `validated`，
+报告 64 条样本、48 条唯一 train、63 条过采样 train 和 16 条 validation；正式配置
+`configs/training/qwen3_vl_2b_lora_ps64_reviewed_v1.json` 因实际数据仍为
+`codex_visual_review_v1_single_pass`、配置要求 `human_confirmed_v1`，在模型加载前
+拒绝。后者是预期门禁，不消耗 GPU 资源。
+
+新增 2 个测试后，项目无硬件测试累计为 `76/76`；正式训练仍需先生成真实的
+`human_confirmed_v1` 数据。

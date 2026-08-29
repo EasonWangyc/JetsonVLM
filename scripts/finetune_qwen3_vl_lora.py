@@ -10,6 +10,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from parksight_vlm.assessment import ParkingAssessment
+from parksight_vlm.workload import FrozenWorkload
+
 
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -23,6 +26,49 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     if not records:
         raise ValueError("training dataset must not be empty")
     return records
+
+
+def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Validate all cheap training inputs without importing CUDA dependencies."""
+    dataset_path = Path(config["dataset_path"]).resolve()
+    workload_path = Path(config["workload_path"]).resolve()
+    model_path = Path(config["model_path"]).resolve()
+    if not dataset_path.is_file():
+        raise FileNotFoundError(f"training dataset does not exist: {dataset_path}")
+    if not workload_path.is_file():
+        raise FileNotFoundError(f"workload does not exist: {workload_path}")
+    if not model_path.is_dir():
+        raise FileNotFoundError(f"model directory does not exist: {model_path}")
+
+    workload = FrozenWorkload.load(workload_path)
+    records = _load_records(dataset_path)
+    label_source = _validate_label_provenance(records, config)
+    factor = int(config.get("non_low_oversampling_factor", 1))
+    unique_train_records = [record for record in records if record.get("split") == "train"]
+    validation_records = [
+        record for record in records if record.get("split") == "validation"
+    ]
+    if not unique_train_records or not validation_records:
+        raise ValueError("dataset requires non-empty train and validation splits")
+    for index, record in enumerate(records, start=1):
+        image = record.get("image")
+        if not isinstance(image, str) or not Path(image).is_file():
+            raise FileNotFoundError(f"training image is missing at row {index}: {image}")
+        ParkingAssessment.from_mapping(record.get("assessment"))
+
+    effective_train_records = _oversample_non_low_records(unique_train_records, factor)
+    return {
+        "status": "validated",
+        "dataset_path": str(dataset_path),
+        "workload_path": str(workload_path),
+        "workload_identity": workload.identity,
+        "model_path": str(model_path),
+        "label_source": label_source,
+        "sample_count": len(records),
+        "unique_train_samples": len(unique_train_records),
+        "effective_train_samples": len(effective_train_records),
+        "validation_samples": len(validation_records),
+    }
 
 
 def _validate_label_provenance(
@@ -137,8 +183,18 @@ def _evaluate(model: Any, processor: Any, workload: Any, records: list[dict[str,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="validate training inputs and provenance without loading CUDA or a model",
+    )
     args = parser.parse_args()
     config = _load_json(args.config)
+
+    validation = validate_training_config(config)
+    if args.validate_only:
+        print(json.dumps(validation, ensure_ascii=False, indent=2))
+        return 0
 
     import torch
     from peft import LoraConfig, get_peft_model
@@ -147,8 +203,6 @@ def main() -> int:
         Qwen3VLForConditionalGeneration,
         get_linear_schedule_with_warmup,
     )
-
-    from parksight_vlm.workload import FrozenWorkload
 
     seed = int(config["seed"])
     random.seed(seed)
