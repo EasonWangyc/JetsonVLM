@@ -1545,3 +1545,22 @@ checkpoint，并使用
 这一步证明 candidate 的训练、独立 adapter、merge 和服务器评测链路已打通；由于标签
 仍是 Codex 候选结果，后续正式流程必须等待人工终审后重新训练，不应直接将该 checkpoint
 导出为最终 Jetson engine。
+
+## 26. 候选错误复核清单（2026-08-30）
+
+为支持候选 annotation 的人工终审，新增 `scripts/build_candidate_error_review.py`。脚本
+读取 `ps80_development_v1.jsonl`、`ps80_reviewed_v1.jsonl` 以及 train/validation 两份
+Jetson StudyReport，要求三者的 case_id 集合完全一致，然后生成逐样本 JSON 清单。
+
+清单包含 candidate/model assessment、原始模型输出、JSON 失败事实、风险等级匹配结果、
+事件 FP/FN 和复核优先级。实际生成结果覆盖 `80/80` 个 case：77 条 JSON 有效，47 条
+风险等级匹配，47 条事件完全匹配，30 个 case 存在事件差异，33 个 case 为高优先级；
+事件 false positive 为 0，false negative 为 `vehicle_near_maneuver_path=20`、
+`narrow_passage=18`、`visibility_occlusion=9`、`fixed_obstacle_near_path=3`、
+`vru_near_maneuver_path=1`。输出路径为
+`reports/label-review-20260830/ps80_candidate_error_review_v1.json`，该文件位于本地
+忽略目录，不作为仓库标注提交。
+
+人工复核时应优先处理高优先级 case，完成 `confirmed`/`corrected` 状态和 review note
+后，再使用 `finalize_review_package.py` 生成 `human_confirmed_v1` 数据；候选复核清单
+本身不会改变标注来源，也不会解除正式训练的 provenance gate。

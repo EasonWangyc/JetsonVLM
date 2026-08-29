@@ -124,6 +124,12 @@ validation 候选分片分别运行一次。参考标注来自 `ps80_reviewed_v1
 `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671` 和
 `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`。
 
+人工复核清单可由 `scripts/build_candidate_error_review.py` 生成。当前清单覆盖 80 个
+case，其中 77 条 JSON 有效、47 条风险等级匹配、30 个 case 存在事件差异、33 个 case
+被列为高优先级复核；事件差异全部表现为候选事件漏检。清单位于本地忽略目录
+`reports/label-review-20260830/ps80_candidate_error_review_v1.json`，候选标签仍需
+人工确认或修正后才能生成 `human_confirmed_v1`。
+
 ## 实验结果
 
 ### Jetson 同机运行时对比

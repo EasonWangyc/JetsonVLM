@@ -36,6 +36,11 @@
   版本；报告 SHA-256 分别为
   `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671` 和
   `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`。评测服务已停止。
+
+- 已生成 80 条候选开发评测的人工复核清单：覆盖 `80/80` 个 case，77 条 JSON 有效，47 条
+  风险等级匹配，30 个 case 存在事件差异，33 个 case 为高优先级；事件差异全部是候选
+  事件漏检。生成入口为 `scripts/build_candidate_error_review.py`，输出为
+  `reports/label-review-20260830/ps80_candidate_error_review_v1.json`。
 - 已在本地 RTX 4060 隔离训练环境完成候选 LoRA：3 epochs、48 个唯一训练样本、63 条
   过采样记录、48 个 optimizer steps，validation loss `0.72318`，峰值显存 `5.272 GiB`，
   训练耗时约 `146 s`。候选 adapter 在冻结 `ps20_pilot_v1` 上为风险准确率 `50%`、

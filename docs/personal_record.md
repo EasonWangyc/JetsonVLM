@@ -1184,3 +1184,17 @@ loss 为 `0.723180890083313`，峰值 CUDA 显存 `5.272403240203857 GiB`，耗�
 `configs/flows/merge_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 完成合并，并以
 `configs/studies/server_transformers_merged_lora_ps64_codex_candidate_v1_ps20_pilot.json`
 复测；merged 与 adapter 的 20 条 case 顺序、原始输出和质量指标完全一致。
+
+### 2.17 2026-08-30：候选结果人工复核清单
+
+为减少人工终审的整理成本，新增 `scripts/build_candidate_error_review.py`，合并 80 条
+Jetson train/validation StudyReport，并与 `ps80_reviewed_v1` 候选 annotation 逐 case
+对齐。输出清单包含图片引用、来源组、候选 assessment、模型 assessment、原始输出、失败
+原因、风险等级是否匹配、事件 false positive/false negative 以及复核优先级。
+
+当前清单覆盖 80 个 case，77 条 JSON 有效，47 条风险等级匹配，47 条事件完全匹配，30
+个 case 存在事件差异，33 个 case 被标为高优先级；事件差异的 false positive 为 0，
+漏检主要集中在 `vehicle_near_maneuver_path`（20）、`narrow_passage`（18）和
+`visibility_occlusion`（9）。清单输出为
+`reports/label-review-20260830/ps80_candidate_error_review_v1.json`，仅支持人工复核，
+不会改变候选 annotation 或自动生成 `human_confirmed_v1`。
