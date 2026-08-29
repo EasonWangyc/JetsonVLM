@@ -53,6 +53,23 @@ TensorRT Edge-LLM revision 为准。
 并从 checkout 的 `build/libNvInfer_edgellm_plugin.so` 发现插件；也可以用
 `--plugin-path` 显式指定插件：
 
+启动前可先做不加载 GPU runtime 的静态预检：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:/home/ubuntu/TensorRT-Edge-LLM/build:$LD_LIBRARY_PATH
+
+.venv-jetson/bin/python scripts/serve_edgellm.py \
+  --check-only \
+  --edge-llm-root /home/ubuntu/TensorRT-Edge-LLM \
+  --engine-root artifacts/engines/qwen3_vl_2b_fp16_i768_k1024 \
+  --plugin-path /home/ubuntu/TensorRT-Edge-LLM/build/libNvInfer_edgellm_plugin.so
+```
+
+预检返回 `ready=true` 只证明文件和路径齐全，不代表统一内存、CUDA graph 或 HTTP
+服务一定能启动；这些仍需实际板端加载和请求验证。
+
 ```bash
 cd /home/ubuntu/JetsonVLM
 export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib

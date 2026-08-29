@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -23,6 +24,40 @@ def serve_prebuilt_engines(*, engine_root: Path, host: str, port: int) -> None:
         visual_engine_dir=str(engine_root / "visual"),
     )
     llm.serve(host=host, port=port)
+
+
+def deployment_readiness(
+    *,
+    engine_root: Path,
+    edge_llm_root: Path | None,
+    plugin_path: Path | None,
+) -> dict[str, object]:
+    """Check static deployment inputs without importing or loading the runtime."""
+    resolved_engine_root = engine_root.resolve()
+    required_engines = (
+        resolved_engine_root / "llm" / "llm.engine",
+        resolved_engine_root / "visual" / "visual.engine",
+    )
+    missing_engines = [
+        str(path) for path in required_engines if not path.is_file()
+    ]
+    report: dict[str, object] = {
+        "engine_root": str(resolved_engine_root),
+        "required_engines": [str(path) for path in required_engines],
+        "missing_engines": missing_engines,
+        "ready": not missing_engines,
+    }
+    try:
+        configure_edge_llm_environment(edge_llm_root, plugin_path)
+    except (FileNotFoundError, ValueError) as error:
+        report["ready"] = False
+        report["configuration_error"] = str(error)
+    if edge_llm_root is not None:
+        report["edge_llm_root"] = str(edge_llm_root.resolve())
+    configured_plugin = os.environ.get("EDGELLM_PLUGIN_PATH")
+    if configured_plugin:
+        report["plugin_path"] = configured_plugin
+    return report
 
 
 def configure_weight_streaming_budget(budget_bytes: int | None) -> None:
@@ -87,9 +122,23 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="TensorRT Edge-LLM plugin .so；未指定时从 --edge-llm-root 自动发现",
     )
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="只检查 engine、源码和 plugin 路径，不导入或加载 GPU runtime",
+    )
     args = parser.parse_args(argv)
 
     engine_root = Path(args.engine_root).resolve()
+    if args.check_only:
+        report = deployment_readiness(
+            engine_root=engine_root,
+            edge_llm_root=args.edge_llm_root,
+            plugin_path=args.plugin_path,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["ready"] else 2
+
     required_engines = (
         engine_root / "llm" / "llm.engine",
         engine_root / "visual" / "visual.engine",

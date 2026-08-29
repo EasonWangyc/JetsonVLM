@@ -14,6 +14,7 @@ from scripts.build_edgellm_vlm_engines import build_commands
 from scripts.serve_edgellm import (
     configure_edge_llm_environment,
     configure_weight_streaming_budget,
+    deployment_readiness,
     serve_prebuilt_engines,
 )
 
@@ -68,6 +69,45 @@ class DeploymentTests(unittest.TestCase):
     def test_weight_streaming_budget_rejects_negative_value(self) -> None:
         with self.assertRaisesRegex(ValueError, "must not be negative"):
             configure_weight_streaming_budget(-1)
+
+    def test_deployment_readiness_checks_both_engines_without_loading_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "llm").mkdir()
+            (root / "visual").mkdir()
+            (root / "llm" / "llm.engine").write_bytes(b"llm")
+            (root / "visual" / "visual.engine").write_bytes(b"visual")
+            edge_root = root / "edge-llm"
+            (edge_root / "build").mkdir(parents=True)
+            plugin = edge_root / "build" / "libNvInfer_edgellm_plugin.so"
+            plugin.write_bytes(b"plugin")
+
+            with patch.dict("os.environ", {}, clear=True):
+                report = deployment_readiness(
+                    engine_root=root,
+                    edge_llm_root=edge_root,
+                    plugin_path=None,
+                )
+
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["missing_engines"], [])
+        self.assertEqual(report["plugin_path"], str(plugin))
+
+    def test_deployment_readiness_reports_missing_visual_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "llm").mkdir()
+            (root / "visual").mkdir()
+            (root / "llm" / "llm.engine").write_bytes(b"llm")
+            with patch.dict("os.environ", {}, clear=True):
+                report = deployment_readiness(
+                    engine_root=root,
+                    edge_llm_root=None,
+                    plugin_path=None,
+                )
+
+        self.assertFalse(report["ready"])
+        self.assertEqual(len(report["missing_engines"]), 1)
 
     def test_vlm_engine_builder_prepares_llm_then_visual_build(self) -> None:
         edge_root = Path("/opt/TensorRT-Edge-LLM")

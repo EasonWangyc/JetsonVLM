@@ -2,8 +2,8 @@
 
 ## 2026-08-29 现场复核 checkpoint
 
-- 本地仓库已提交 Codex-assisted review workflow；当前新增的训练 provenance 防误用改动
-  尚未提交。
+- 本地仓库已提交 Codex-assisted review workflow 和训练 provenance 防误用改动；当前
+  `main` 比 `origin/main` 超前 3 个本地提交，未执行 push。
 - 无硬件测试为 `61/61` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。
@@ -21,6 +21,8 @@
 - 新增 `inspect_review_package.py` 只读检查入口，可输出复核状态计数、待处理 case_id、
   候选风险/事件分布和 `ready_for_finalize`；使用 `--fail-on-incomplete` 可将未完成复核
   作为流程失败处理。
+- Edge-LLM 服务入口新增 `--check-only` 静态预检；它已在 Jetson 现有 FP16 engine、
+  Edge-LLM pybind 和 plugin 路径上完成检查，可区分文件/路径就绪与实际 GPU 加载成功。
 - 已通过 SSH 只读连接 Jetson。板端工作树为旧提交 `f362a43` 且存在 33 项未提交/未跟踪
   改动，本轮未覆盖或清理。临时补充 venv 内 CUDA 库路径后，PyTorch `2.9.1`、CUDA
   `12.6` 和 Transformers `4.57.6` 可导入。

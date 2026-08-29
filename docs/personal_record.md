@@ -1066,3 +1066,12 @@ Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，
 同时增加 `scripts/inspect_review_package.py`，用于在人工复核过程中只读查看状态计数、
 待处理 case_id、候选标签分布和最终化就绪状态；`--fail-on-incomplete` 可作为定稿前的
 显式门禁，不会修改候选 package。
+
+### 2.12 2026-08-30：Edge-LLM 静态部署预检
+
+为减少 Jetson 启动失败的定位成本，`scripts/serve_edgellm.py` 新增 `--check-only`。
+该模式只检查 LLM/visual engine、Edge-LLM checkout、pybind 和 plugin 路径，不导入或加载
+GPU runtime。已在 Jetson 现有 `qwen3_vl_2b_fp16_i768_k1024` engine、
+`/home/ubuntu/TensorRT-Edge-LLM/build/pybind` 和
+`libNvInfer_edgellm_plugin.so` 上完成静态路径核对；实际服务仍因图形桌面统一内存条件
+未重新启动，因此没有新增运行成功结论。
