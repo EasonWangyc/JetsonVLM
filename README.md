@@ -150,8 +150,17 @@ validation 候选分片分别运行一次。参考标注来自 `ps80_reviewed_v1
 | 旧 `ps80` LoRA adapter | 100% | 35% | 0.389 | 1 epoch；旧弱监督数据 |
 | 新 `ps64-reviewed` LoRA adapter | 100% | 50% | 0.182 | 3 epoch；non-low 样本过采样 2 倍 |
 | 新 `ps64-reviewed` merged | 100% | 45% | 0.100 | 合并后结果与 adapter 不一致 |
+| `ps64-codex-candidate` LoRA adapter | 100% | 50% | 0.182 | 3 epoch；48 个唯一训练样本；候选标签 |
+| `ps64-codex-candidate` merged | 100% | 50% | 0.182 | 与 adapter 的 20 条逐样本输出一致；候选标签 |
 
 新一轮 LoRA 使用 48 个唯一训练样本，过采样后为 63 条有效训练记录，训练 3 epoch、48 个 optimizer step，验证损失为 `0.7220`，峰值 CUDA 显存约 `5.273 GiB`，训练耗时约 `80.84 s`。
+
+本地 RTX 4060 上的 Codex candidate 训练使用同一模型 revision，验证损失为 `0.72318`，
+峰值 CUDA 显存 `5.272 GiB`，训练耗时约 `146 s`。candidate adapter 在冻结
+`ps20_pilot_v1` 上的风险准确率为 `50%`、事件 micro-F1 为 `0.1818`；同配置 base
+对照为 `35%` 和 `0.350`，因此该候选训练没有改善事件识别。merged checkpoint 与
+adapter 的 20 条 case 顺序、原始输出和指标均一致。候选标签仍需人工终审，不能直接
+用于正式模型发布。
 
 ### INT4 量化结果
 

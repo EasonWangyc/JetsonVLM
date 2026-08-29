@@ -36,6 +36,14 @@
   版本；报告 SHA-256 分别为
   `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671` 和
   `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`。评测服务已停止。
+- 已在本地 RTX 4060 隔离训练环境完成候选 LoRA：3 epochs、48 个唯一训练样本、63 条
+  过采样记录、48 个 optimizer steps，validation loss `0.72318`，峰值显存 `5.272 GiB`，
+  训练耗时约 `146 s`。候选 adapter 在冻结 `ps20_pilot_v1` 上为风险准确率 `50%`、
+  事件 micro-F1 `0.1818`；同环境 base 为 `35%`、`0.350`，事件识别反而下降。
+- 候选 adapter 已成功 merge，merged checkpoint 与 adapter 的 20 条输出逐样本一致，
+  对应配置为 `merge_qwen3_vl_2b_lora_ps64_codex_candidate_v1` 和
+  `server_transformers_merged_lora_ps64_codex_candidate_v1_ps20_pilot`。该实验仍使用
+  Codex 候选标签，不构成正式质量结论。
 
 ## 2026-08-29 现场复核 checkpoint
 

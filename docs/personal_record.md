@@ -1163,3 +1163,24 @@ validation。参考 annotation 是 Codex 候选结果，不是人工终审金标
 （SHA-256 `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671`）和
 `reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_validation_strict_json_i768_k1024.json`
 （SHA-256 `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`）。
+
+### 2.16 2026-08-30：候选 LoRA 训练、合并与服务器对照
+
+在本地 RTX 4060 上创建独立 `.venv-train`，安装 PyTorch `2.8.0+cu128`、Transformers
+`5.9.0`、PEFT `0.18.0` 和 Accelerate `1.10.1`。从 Jetson 缓存复制的 Qwen3-VL
+权重大小为 `4,255,140,312` 字节，SHA-256 为
+`7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0`，与板端缓存一致。
+processor 和 BF16 模型加载成功，CUDA 可用且 BF16 支持。
+
+使用 `configs/training/qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 完成候选训练：
+48 个唯一训练样本，non-low 过采样后 63 条，3 epochs、48 个 optimizer steps，validation
+loss 为 `0.723180890083313`，峰值 CUDA 显存 `5.272403240203857 GiB`，耗时
+`145.891 s`。adapter 输出位于被忽略的 `artifacts/` 目录。
+
+在固定 `ps20_pilot_v1`、`parking_risk_v1` 和同一 model revision 上，base 对照为风险
+准确率 `35%`、事件 micro-F1 `0.350`；candidate adapter 为 `50%`、`0.1818`，两者
+严格 JSON 均为 `100%`。candidate 提高了风险等级命中，但事件错误增加，不能作为正式
+模型改进。随后使用
+`configs/flows/merge_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 完成合并，并以
+`configs/studies/server_transformers_merged_lora_ps64_codex_candidate_v1_ps20_pilot.json`
+复测；merged 与 adapter 的 20 条 case 顺序、原始输出和质量指标完全一致。

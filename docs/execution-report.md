@@ -1500,3 +1500,48 @@ SHA-256: 8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd
 
 评测服务在报告写入后已停止；后续应在人工终审数据后，以 `human_confirmed_v1` 重新
 训练和量化，并在冻结 `ps20_pilot_v1` 上执行正式质量验收。
+
+## 25. 候选 LoRA 训练、合并与服务器对照（2026-08-30）
+
+### 25.1 训练环境与输入
+
+本次使用本机 RTX 4060 Laptop GPU（8,188 MiB，compute capability 8.9）和独立
+`.venv-train`。训练依赖固定为 PyTorch `2.8.0+cu128`、Transformers `5.9.0`、PEFT
+`0.18.0`、Accelerate `1.10.1`。Qwen3-VL 权重从 Jetson 缓存复制后校验大小为
+`4,255,140,312` 字节，SHA-256 为
+`7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0`。
+
+训练配置为 `configs/training/qwen3_vl_2b_lora_ps64_codex_candidate_v1.json`，数据为
+`ps64_codex_candidate_v1`，label source 为
+`codex_visual_review_v1_single_pass`，显式允许 candidate labels。训练使用 48 个唯一
+样本，non-low 过采样后 63 条，3 epochs、48 optimizer steps；validation loss
+`0.723180890083313`，峰值 CUDA 显存 `5.272403240203857 GiB`，耗时 `145.891 s`。
+
+### 25.2 Base 与 candidate adapter 对照
+
+两项 study 均使用固定 `ps20_pilot_v1`、`parking_risk_v1`、20 条样本、单次重复、同一
+Qwen3-VL model revision 和本地 Transformers 5.9.0 环境。
+
+| 模型 | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Base BF16 | 20/20 | 100% | 35% | 0.350 | 0% | 4461 ms |
+| Codex candidate LoRA | 20/20 | 100% | 50% | 0.1818 | 0% | 4067 ms |
+
+candidate 使风险等级准确率提高 15 个百分点，但事件 micro-F1 从 `0.350` 降至
+`0.1818`，主要表现为 `visibility_occlusion` 漏检和 `vehicle_near_maneuver_path`
+误报增加；该结果不能解释为整体领域能力提升。候选 adapter 报告 SHA-256 为
+`3ed0a7545e1212108413c3ad834fa01be030c3601a3e3aa5f876286693755fc9`。
+
+### 25.3 Merge 一致性验证
+
+新增 flow 配置
+`configs/flows/merge_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json`，生成独立 merged
+checkpoint，并使用
+`configs/studies/server_transformers_merged_lora_ps64_codex_candidate_v1_ps20_pilot.json`
+复测。merged 结果为风险准确率 `50%`、事件 micro-F1 `0.1818`、严格 JSON `100%`；
+与 adapter 的 20 条 case 顺序、原始输出和质量指标完全一致。merged 报告 SHA-256 为
+`01a00e8ed5432fc626af1a27ba0288696406f8b7b6ed7c13d9b51685cd3078a2`。
+
+这一步证明 candidate 的训练、独立 adapter、merge 和服务器评测链路已打通；由于标签
+仍是 Codex 候选结果，后续正式流程必须等待人工终审后重新训练，不应直接将该 checkpoint
+导出为最终 Jetson engine。
