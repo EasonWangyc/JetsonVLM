@@ -40,6 +40,11 @@ def main(
     parser.add_argument("--model-source", required=True, type=Path)
     parser.add_argument("--processed-chat-template", required=True, type=Path)
     parser.add_argument("--model-name", default="local")
+    parser.add_argument(
+        "--max-input-tokens",
+        type=int,
+        help="可选的输入 token 上限；超出时返回退出码 2",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
 
@@ -52,6 +57,7 @@ def main(
         processed_chat_template_path=args.processed_chat_template,
         processor=processor,
         model_name=args.model_name,
+        max_input_tokens=args.max_input_tokens,
     )
     serialized_report = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output is not None:
@@ -59,7 +65,8 @@ def main(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(serialized_report + "\n", encoding="utf-8")
     print(serialized_report)
-    return 0
+    within_budget = report["prompt_tokens"]["within_budget"]
+    return 2 if within_budget is False else 0
 
 
 if __name__ == "__main__":

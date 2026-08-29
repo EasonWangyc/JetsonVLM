@@ -1366,6 +1366,9 @@ parksight_prompt_contract_report_v1
 | `rendered_user_prompt` | 查看完整枚举、数组类型和禁止翻译约束 |
 | `transformers_messages` | Transformers 路径实际使用的结构化消息 |
 | `transformers_rendered_prompt` | `AutoProcessor.apply_chat_template(tokenize=False)` 渲染出的最终文本 |
+| `prompt_tokens.count` | 使用实际 processor 和图片测得的输入 token 数 |
+| `prompt_tokens.budget` | 可选的 engine 输入 token 上限 |
+| `prompt_tokens.within_budget` | 输入是否满足预算；可作为 engine 启动前门禁 |
 | `edge_http_request` | Edge Adapter 真正会发送的完整 HTTP payload |
 | `processed_chat_template.path` | Edge engine 使用的已处理模板位置 |
 | `processed_chat_template.bytes` | 模板文件大小 |
@@ -1431,6 +1434,7 @@ PYTHONPATH=src \
   --image data/raw/ps2.0/pilot/indoor/001.jpg \
   --model-source /home/ubuntu/.cache/huggingface/hub/models--Qwen--Qwen3-VL-2B-Instruct/snapshots/89644892e4d85e24eaac8bacfd4f463576704203 \
   --processed-chat-template artifacts/engines/qwen3_vl_2b_fp16/llm/processed_chat_template.json \
+  --max-input-tokens 768 \
   --output reports/prompt-contract/qwen3_vl_2b_fp16_20260811.json
 ```
 
@@ -1446,6 +1450,7 @@ workload_identity = parking_risk_v1@sha256:8350ace4574f8aa154319f7136ef831003d4d
 message_contract.messages_equal = true
 message_contract.system_content_type = array
 message_contract.user_content_types = ["image", "text"]
+prompt_tokens.within_budget = true
 ```
 
 还要人工检查 `transformers_rendered_prompt` 是否包含：

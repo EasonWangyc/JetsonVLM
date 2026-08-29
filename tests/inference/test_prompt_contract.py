@@ -38,11 +38,20 @@ class FakeProcessor:
         *,
         tokenize: bool,
         add_generation_prompt: bool,
-    ) -> str:
+        **kwargs: object,
+    ) -> object:
         self.messages = messages
-        if tokenize or not add_generation_prompt:
-            raise AssertionError("诊断必须渲染文本并保留 generation prompt")
+        if not add_generation_prompt:
+            raise AssertionError("诊断必须保留 generation prompt")
+        if tokenize:
+            self.assert_tokenize_kwargs(kwargs)
+            return {"input_ids": [[1, 2, 3]]}
         return "<system>strict-json</system><assistant>"
+
+    @staticmethod
+    def assert_tokenize_kwargs(kwargs: dict[str, object]) -> None:
+        if kwargs != {"return_dict": True, "return_tensors": "pt"}:
+            raise AssertionError(f"unexpected tokenization kwargs: {kwargs}")
 
 
 class PromptContractReportTests(unittest.TestCase):
@@ -62,6 +71,7 @@ class PromptContractReportTests(unittest.TestCase):
             "parksight_prompt_contract_report_v1",
         )
         self.assertEqual(report["workload_identity"], workload.identity)
+        self.assertEqual(report["prompt_tokens"], {"count": 3, "budget": None, "within_budget": None})
         self.assertEqual(
             report["transformers_rendered_prompt"],
             "<system>strict-json</system><assistant>",
@@ -113,6 +123,31 @@ class PromptContractReportTests(unittest.TestCase):
             "parksight_prompt_contract_report_v1",
         )
         self.assertEqual(report["message_contract"]["messages_equal"], True)
+
+    def test_cli_rejects_prompt_over_budget(self) -> None:
+        processor = FakeProcessor()
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout):
+            exit_code = inspect_prompt_contract_main(
+                [
+                    "--workload",
+                    str(WORKLOAD_PATH),
+                    "--image",
+                    str(IMAGE_PATH),
+                    "--model-source",
+                    str(MODEL_SOURCE),
+                    "--processed-chat-template",
+                    str(PROCESSED_TEMPLATE_PATH),
+                    "--max-input-tokens",
+                    "2",
+                ],
+                processor_loader=lambda _: processor,
+            )
+
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(report["prompt_tokens"]["within_budget"], False)
 
 
 if __name__ == "__main__":

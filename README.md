@@ -81,6 +81,11 @@ TensorRT Edge-LLM 部署和可审计评测。
 而不是 schema 或生成配置变化。v2 明确要求输出原始 JSON 对象，禁止 Markdown 代码围栏和前后说明；同时将重复的字段
 说明压缩到 workload 渲染器追加的统一约束中，避免超过当前 `i768` engine 的最大输入长度。
 
+`scripts/inspect_prompt_contract.py` 支持 `--max-input-tokens` 预算门禁。使用 Jetson 实际
+Qwen3-VL processor 测得同一图片的 v1/v2 输入分别为 735/700 tokens，均满足 768 上限；
+诊断报告中的 `prompt_tokens.count`、`prompt_tokens.budget` 和
+`prompt_tokens.within_budget` 用于在启动 engine 前发现超长 workload。
+
 在 Jetson 领域 INT4 engine `qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024`、冻结的
 `ps20_pilot_v1`、相同运行时参数下完成 20 样本 A/B；两次运行均为单次重复，v2 先运行、
 v1 后运行：

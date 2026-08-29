@@ -15,6 +15,9 @@
 - 第一次 v2 请求曾因提示词达到 823 token、超过 `i768` engine 的 768 token 输入上限而
   返回 HTTP 500；压缩重复约束后重新验证通过。该事实纳入 workload 设计约束，后续完整
   study 需要同时报告输入 token 预算和格式有效率。
+- prompt-contract 诊断已增加 token 计数和 `--max-input-tokens` 门禁；Jetson 实际 Qwen3-VL
+  processor 测得固定 `001.jpg` 的 v1/v2 输入为 `735/700` tokens，均返回
+  `within_budget=true`，并确认 `messages_equal=true`。
 - 本次服务已停止；日志归档于
   `reports/jetson-int4-strict-json-smoke-20260830.log`，SHA-256 为
   `6850bee6589a026cd4e2a24cb6d7e8e5e090341bcf0ee94ac4619cfd577af5a1`。

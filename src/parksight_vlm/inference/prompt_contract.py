@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -25,8 +26,9 @@ class ChatTemplateProcessor(Protocol):
         *,
         tokenize: bool,
         add_generation_prompt: bool,
-    ) -> str:
-        """将消息渲染成模型真正接收的文本 Prompt。"""
+        **kwargs: Any,
+    ) -> Any:
+        """将消息渲染成模型真正接收的文本或 tokenized 输入。"""
 
 
 def build_prompt_contract_report(
@@ -37,8 +39,11 @@ def build_prompt_contract_report(
     processed_chat_template_path: Path,
     processor: ChatTemplateProcessor,
     model_name: str = "local",
+    max_input_tokens: int | None = None,
 ) -> dict[str, Any]:
     """生成不执行模型推理的 Prompt/Template 对齐报告。"""
+    if max_input_tokens is not None and max_input_tokens <= 0:
+        raise ValueError("max_input_tokens must be positive")
     image_path = image_path.resolve()
     model_source = model_source.resolve()
     processed_chat_template_path = processed_chat_template_path.resolve()
@@ -67,6 +72,7 @@ def build_prompt_contract_report(
     )
     if not isinstance(transformers_rendered_prompt, str):
         raise TypeError("Transformers processor 必须返回文本 Prompt")
+    prompt_token_count = _measure_prompt_tokens(processor, transformers_messages)
 
     edge_backend = EdgeLlmHttpBackend(model_name=model_name)
     edge_http_request = edge_backend.build_request_payload(
@@ -90,6 +96,15 @@ def build_prompt_contract_report(
         "rendered_user_prompt": workload.render_user_prompt(),
         "transformers_messages": transformers_messages,
         "transformers_rendered_prompt": transformers_rendered_prompt,
+        "prompt_tokens": {
+            "count": prompt_token_count,
+            "budget": max_input_tokens,
+            "within_budget": (
+                None
+                if prompt_token_count is None or max_input_tokens is None
+                else prompt_token_count <= max_input_tokens
+            ),
+        },
         "edge_http_request": edge_http_request,
         "processed_chat_template": {
             "path": str(processed_chat_template_path),
@@ -108,3 +123,29 @@ def build_prompt_contract_report(
             ],
         },
     }
+
+
+def _measure_prompt_tokens(
+    processor: ChatTemplateProcessor,
+    messages: list[dict[str, Any]],
+) -> int | None:
+    """使用同一 chat template 测量输入 token 数，不执行模型推理。"""
+    tokenized = processor.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_dict=True,
+        return_tensors="pt",
+    )
+    if isinstance(tokenized, Mapping):
+        input_ids = tokenized.get("input_ids")
+    else:
+        input_ids = getattr(tokenized, "input_ids", None)
+    shape = getattr(input_ids, "shape", None)
+    if shape is not None and len(shape) >= 2:
+        return int(shape[-1])
+    if isinstance(input_ids, Sequence) and input_ids:
+        first_row = input_ids[0]
+        if isinstance(first_row, Sequence):
+            return len(first_row)
+    return None

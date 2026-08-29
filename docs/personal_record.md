@@ -1126,6 +1126,15 @@ runtime 参数下完成完整 A/B。v1 运行结果为 20/20 后端完成、严�
 压缩后请求通过，说明格式约束和输入预算需要共同设计。两次完整 study 均为单次重复，且
 v2 先运行、v1 后运行，端到端 p50 仅作本轮描述性证据。
 
+随后将 token 预算检查固化到 `scripts/inspect_prompt_contract.py`。使用 Jetson 实际
+Qwen3-VL processor、同一图片和 engine chat template，v1/v2 输入 token 数为 `735/700`；
+以 `--max-input-tokens 768` 运行时两者均通过门禁，且 `message_contract.messages_equal`
+均为 `true`。报告分别为
+`reports/prompt-contract/qwen3_vl_v1_i768_budget_20260830.json`（SHA-256
+`d7d11b4192f97d9d8035bfc53d911299a673c0c8087af996e8a2547fe5ffc0cf`）和
+`reports/prompt-contract/qwen3_vl_v2_i768_budget_20260830.json`（SHA-256
+`247f66553562cb5d7de3aae4e85ba07bd19ade626c002540ddacc26fa967a663`）。
+
 新 study 配置为
 `configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json`，原始日志
 为 `reports/jetson-int4-ps20-strict-json-20260830.log`；StudyReport 为
