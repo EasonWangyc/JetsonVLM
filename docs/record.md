@@ -3875,3 +3875,63 @@ flow；未重复回传 4.0 GiB 基础模型、2.0 GiB 量化权重或 ONNX 大�
 本轮完成后，计划中的“用复核标签重训 LoRA”和“用独立领域校准集重做 INT4”都已有
 真实运行证据。下一阶段不应盲目增加训练或量化轮次；如果继续提升质量，应先人工终审
 标注并扩大 calibration 覆盖，再以相同冻结 20 样本复测。
+
+## 29. 2026-08-30：候选开发闭环与人工复核门禁
+
+### 29.1 80 条候选开发集的服务器评测
+
+为确认候选标注可以支撑训练后的批量评测，在本地 RTX 4060、Transformers 5.9.0、同一
+Qwen3-VL revision 和 `parking_risk_v2_strict_json` workload 下，使用 Codex 候选 LoRA
+adapter 对 `ps80_development_v1` 的 64 条 train 与 16 条 validation 分别执行一次
+服务器 study。参考 annotation 是 `ps80_reviewed_v1` 候选结果，不是人工终审金标。
+
+| 分片 | 样本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| train | 64 | 100% | 57.81% | 0 | 32.81% | 3424 ms |
+| validation | 16 | 100% | 62.50% | 0 | 18.75% | 4087 ms |
+| 合计 | 80 | 100% | 58.75% | 0 | 30.00% | 分片口径 |
+
+两处分片均完成严格 JSON 解析，风险等级准确率接近，但事件 micro-F1 均为 0，说明该
+候选 adapter 尚未形成可用的风险事件识别能力。该实验仅证明候选数据、adapter 和
+服务器 StudyReport 链路可运行，不能替代人工金标质量验收。
+
+配置为：
+
+```text
+configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json
+configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_validation_strict_json.json
+```
+
+本机忽略目录中的报告 SHA-256 分别为：
+
+```text
+d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf
+d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87
+```
+
+### 29.2 人工复核工具链
+
+80 条候选结果已经生成逐 case 错误复核清单和高优先级联系表。当前 Jetson 评测结果为
+77 条严格 JSON 有效、47 条风险等级匹配、30 条存在事件差异、33 条高优先级；这些
+统计只用于安排复核，不会修改候选 annotation。
+
+新增 `scripts/apply_review_decisions.py`，支持生成 80 条决策模板和按批次应用人工
+`confirmed`/`corrected` 决策。模板初始状态固定为 `candidate`；`confirmed` 可通过
+`human_assessment=null` 明确确认候选内容，`corrected` 必须提供不同的严格
+`ParkingAssessment` 和非空 `review_note`。`--require-complete` 会要求全部 package
+记录完成后才通过门禁。
+
+本阶段累计无硬件测试 `74/74` 通过。当前正式质量路径仍为：
+
+```text
+人工终审 80 条候选标注
+  -> human_confirmed_v1
+  -> LoRA train / validation
+  -> merge
+  -> 独立领域 calibration 的 INT4 AWQ
+  -> Jetson engine
+  -> ps20_pilot_v1 冻结集质量与性能验收
+```
+
+在人工终审完成前，不将 Codex 候选 annotation、candidate adapter 或 candidate merged
+checkpoint 作为正式模型导出和部署。
