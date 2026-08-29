@@ -55,6 +55,12 @@ class AppTests(unittest.TestCase):
             / "studies"
             / "jetson_edgellm_fp16_ps20_pilot.json"
         )
+        candidate_lora_config = AppStudyConfig.load(
+            PROJECT_ROOT
+            / "configs"
+            / "studies"
+            / "server_transformers_lora_ps64_codex_candidate_v1_ps20_pilot.json"
+        )
 
         self.assertEqual(transformers_config.runtime.backend, "transformers")
         self.assertEqual(
@@ -81,6 +87,18 @@ class AppTests(unittest.TestCase):
             "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
         )
         self.assertEqual(edge_ps20_config.runtime.precision, "fp16")
+        self.assertEqual(
+            candidate_lora_config.runtime.adapter_revision,
+            "ps64-codex-candidate-v1-r16",
+        )
+        self.assertEqual(
+            candidate_lora_config.runtime.precision,
+            "bf16+lora-candidate",
+        )
+        self.assertEqual(
+            candidate_lora_config.runtime.options["adapter_path"],
+            "artifacts/adapters/qwen3_vl_2b_parking_lora_ps64_codex_candidate_v1",
+        )
         self.assertEqual(edge_ps20_config.study.power_mode, "15W_MODE_0")
         self.assertEqual(
             edge_ps20_config.manifest_path.name,

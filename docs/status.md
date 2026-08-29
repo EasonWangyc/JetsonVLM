@@ -18,6 +18,9 @@
 - 正式 LoRA 训练入口现在要求训练配置声明 `label_source`，并核对所有数据记录的来源
   一致性；候选 Codex 来源默认被拒绝。当前 `ps64_reviewed_v1` 配置因此会在启动早期
   停止，等待人工终审后的 `human_confirmed_v1` 数据。
+- 为支持“先跑通 Codex 开发流程、后做人工复盘”，新增独立的
+  `train_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json`；它显式允许候选标签，但输出
+  目录和 flow_id 均带 `codex_candidate`，与正式训练配置隔离。
 - 新增 `inspect_review_package.py` 只读检查入口，可输出复核状态计数、待处理 case_id、
   候选风险/事件分布和 `ready_for_finalize`；使用 `--fail-on-incomplete` 可将未完成复核
   作为流程失败处理。

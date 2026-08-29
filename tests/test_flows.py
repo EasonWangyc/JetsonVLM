@@ -80,6 +80,22 @@ class ExternalFlowPlanTests(unittest.TestCase):
                 self.assertEqual(plan.stage, stage)
                 self.assertNotIn("replace-with-", " ".join(plan.command))
 
+    def test_loads_explicit_codex_candidate_training_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "train_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json"
+        )
+        self.assertEqual(plan.stage, "train_lora")
+        self.assertIn("codex_candidate", " ".join(plan.command))
+        self.assertTrue(
+            any(path.name == "ps64_reviewed_v1.jsonl" for path in plan.required_inputs)
+        )
+        self.assertTrue(
+            any("codex_candidate_v1" in path.as_posix() for path in plan.expected_outputs)
+        )
+
     def test_loads_pinned_qwen3_vl_fp16_deployment_flows(self) -> None:
         expected = {
             "export_qwen3_vl_2b_fp16.json": "export_model",
