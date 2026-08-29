@@ -49,6 +49,24 @@ PYTHONPATH=src python3 -m parksight_vlm.app.analyze_image \
 HTTP server 的启动方式、请求兼容性和目标模型支持情况必须以 Jetson 上实际安装的
 TensorRT Edge-LLM revision 为准。
 
+板端启动服务时，建议显式传入 Edge-LLM checkout。入口会自动加入源码和 pybind 路径，
+并从 checkout 的 `build/libNvInfer_edgellm_plugin.so` 发现插件；也可以用
+`--plugin-path` 显式指定插件：
+
+```bash
+cd /home/ubuntu/JetsonVLM
+export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
+export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:/home/ubuntu/TensorRT-Edge-LLM/build:$LD_LIBRARY_PATH
+
+.venv-jetson/bin/python scripts/serve_edgellm.py \
+  --edge-llm-root /home/ubuntu/TensorRT-Edge-LLM \
+  --engine-root artifacts/engines/qwen3_vl_2b_fp16_i768_k1024 \
+  --plugin-path /home/ubuntu/TensorRT-Edge-LLM/build/libNvInfer_edgellm_plugin.so \
+  --weight-streaming-budget-bytes 0 \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
 ## 3. 冻结研究
 
 1. 按 [`data.md`](data.md) 准备 manifest、人工标注和图片。

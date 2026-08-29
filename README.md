@@ -239,6 +239,17 @@ LoRA train/validation 与 INT4 calibration 拆分。当前 package 仍属于候�
 生成的标准 annotation JSONL 再作为 `prepare_reviewed_lora_dataset.py` 的
 `--annotations` 输入。
 
+进入训练或校准数据生成时必须显式声明标注来源，例如人工终审后的数据使用
+`--label-source human_confirmed_v1`；候选数据则保留
+`--label-source codex_visual_review_v1_single_pass`。生成的 LoRA/校准记录和 summary
+会沿用该来源标识。
+
+定稿脚本会同时输出 `candidate_human_comparison`，包括候选风险等级准确率、事件
+micro-precision、micro-recall、micro-F1，以及整体标注、风险等级、事件集合、证据和
+驾驶建议的修正数量。`confirmed` 要求人工结果与候选结果完全一致；`corrected` 要求
+结果确实发生变化，并必须填写 `review_note`。因此，80 条样本的识别效果应以人工确认
+后的 comparison 指标为准，而不是以候选 package 的数量或 JSON schema 通过率代替。
+
 ## 开始使用
 
 无硬件测试：

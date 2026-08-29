@@ -1,5 +1,27 @@
 # 当前实现状态
 
+## 2026-08-29 现场复核 checkpoint
+
+- 本地仓库已提交 Codex-assisted review workflow；当前新增的复核审计改动尚未提交。
+- 无硬件测试为 `55/55` 通过；80 条 Codex 候选 package 可由
+  `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
+  `high=1`。
+- 已使用真实候选 annotation 完成一次数据生成 dry-run/校验：LoRA 共 64 条（48 train、
+  16 validation），INT4 calibration 共 16 条；LoRA 与 calibration 来源组交集为 0，
+  开发数据与冻结测试集来源组交集为 0。输出 summary 同时固定了 workload identity、
+  manifest、teacher annotation、candidate annotation 和 calibration config 的 SHA-256。
+- 定稿脚本现在会校验候选和人工两份严格 `ParkingAssessment`，强制
+  `confirmed`/`corrected` 状态与内容一致，并输出候选相对人工结果的风险准确率、事件
+  micro-F1 和字段修正统计。当前没有人工确认 package，因此不能把候选结果写成最终
+  质量结论。
+- 已通过 SSH 只读连接 Jetson。板端工作树为旧提交 `f362a43` 且存在 33 项未提交/未跟踪
+  改动，本轮未覆盖或清理。临时补充 venv 内 CUDA 库路径后，PyTorch `2.9.1`、CUDA
+  `12.6` 和 Transformers `4.57.6` 可导入。
+- 板端 HTTP 服务当前未运行。使用明确的 Edge-LLM 源码、pybind 和插件路径后，FP16 LLM
+  engine、tokenizer 和 base context 可以加载，但图形桌面状态下 visual engine 申请约
+  `811 MiB` 连续内存失败。该结果属于资源条件失败，不改变既有 headless 条件下的
+  `20/20` FP16 成功证据。
+
 ## 已实现并由无硬件测试覆盖
 
 - `ParkingAssessment` 严格 JSON 解析、字段和枚举校验。
@@ -103,6 +125,14 @@ INT4 均已完成相应的
 具体环境、命令和校验结果见 [`progress.md`](progress.md)。
 
 ## 尚未完成及证据边界
+
+### 候选标注复核工具状态
+
+80 条开发样本已经可以通过 `build_review_package.py` 固化为 Codex 候选 package，并在
+人工复盘后通过 `finalize_review_package.py` 转换为标准 annotation JSONL。定稿过程现在
+会校验候选和人工两份 `ParkingAssessment`、强制 `confirmed`/`corrected` 状态与内容一致，
+并输出候选相对人工结果的风险准确率、事件 micro-F1 和字段修正统计。当前实际 package
+仍是 `review_status=candidate`，因此尚未产生人工金标，也不能把候选结果写成最终质量结论。
 
 - Transformers FP16 早期在旧环境/低连续内存状态下有明确 OOM 记录；当前
   R36.5.0、图形桌面和启用 swap 的环境中，固定模型完整映射到 `cuda:0` 并完成

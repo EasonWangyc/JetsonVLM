@@ -51,6 +51,7 @@ class ReviewedLoraDataTests(unittest.TestCase):
             frozen_test_groups={"frozen-group"},
             image_root=image_root,
             workload=WORKLOAD,
+            label_source="human_confirmed_v1",
         )
 
         self.assertEqual([record["split"] for record in lora], ["train", "validation"])
@@ -58,6 +59,8 @@ class ReviewedLoraDataTests(unittest.TestCase):
         self.assertIn("助手输出：", calibration[0]["text"])
         self.assertEqual(summary["group_overlap"]["lora_calibration"], 0)
         self.assertEqual(summary["group_overlap"]["development_frozen_test"], 0)
+        self.assertEqual(summary["label_source"], "human_confirmed_v1")
+        self.assertEqual(lora[0]["label_source"], "human_confirmed_v1")
 
 
 if __name__ == "__main__":

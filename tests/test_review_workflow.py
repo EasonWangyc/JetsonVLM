@@ -109,7 +109,101 @@ class ReviewWorkflowTests(unittest.TestCase):
 
         self.assertEqual(summary["sample_count"], 1)
         self.assertEqual(summary["review_status_counts"], {"confirmed": 1})
+        self.assertEqual(
+            summary["candidate_human_comparison"]["event_micro_f1"],
+            0.0,
+        )
+        self.assertEqual(
+            summary["candidate_human_comparison"]["risk_level_accuracy"],
+            1.0,
+        )
         self.assertEqual(record, {"case_id": "sample-1", "assessment": assessment})
+
+    def test_finalize_rejects_corrected_review_without_note(self) -> None:
+        candidate = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["可见区域内未发现风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        corrected = {**candidate, "risk_level": "medium"}
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "corrected",
+                        "candidate_assessment": candidate,
+                        "human_assessment": corrected,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "requires review_note"):
+                finalize_review_package(
+                    package_path=package,
+                    annotations_output=root / "annotations.jsonl",
+                )
+
+    def test_finalize_reports_corrected_candidate_agreement_metrics(self) -> None:
+        candidate = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        human = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "medium",
+            "events": ["narrow_passage"],
+            "evidence": ["通行空间较窄，需要减速观察。"],
+            "driver_advice": ["slow_down"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "corrected",
+                        "candidate_assessment": candidate,
+                        "human_assessment": human,
+                        "review_note": "候选风险等级和事件均需修正",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            summary = finalize_review_package(
+                package_path=package,
+                annotations_output=root / "annotations.jsonl",
+            )
+
+        comparison = summary["candidate_human_comparison"]
+        self.assertEqual(comparison["risk_level_accuracy"], 0.0)
+        self.assertEqual(comparison["event_micro_precision"], 0.0)
+        self.assertEqual(comparison["event_micro_recall"], 0.0)
+        self.assertEqual(comparison["event_micro_f1"], 0.0)
+        self.assertEqual(comparison["assessment_changed"], 1)
+        self.assertEqual(comparison["risk_levels_changed"], 1)
+        self.assertEqual(comparison["event_sets_changed"], 1)
 
 
 if __name__ == "__main__":

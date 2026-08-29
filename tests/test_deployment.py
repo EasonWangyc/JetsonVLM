@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -10,12 +12,52 @@ from unittest.mock import patch
 
 from scripts.build_edgellm_vlm_engines import build_commands
 from scripts.serve_edgellm import (
+    configure_edge_llm_environment,
     configure_weight_streaming_budget,
     serve_prebuilt_engines,
 )
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_edge_llm_environment_discovers_import_and_plugin_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            pybind = root / "build" / "pybind"
+            pybind.mkdir(parents=True)
+            plugin = root / "build" / "libNvInfer_edgellm_plugin.so"
+            plugin.write_bytes(b"plugin")
+            with patch.dict("os.environ", {}, clear=True), patch.object(
+                sys, "path", []
+            ):
+                configure_edge_llm_environment(root, None)
+
+                self.assertIn(str(root), sys.path)
+                self.assertIn(str(pybind), sys.path)
+                self.assertEqual(os.environ["BUILD_DIR"], str(root / "build"))
+                self.assertEqual(os.environ["EDGELLM_PLUGIN_PATH"], str(plugin))
+
+    def test_edge_llm_environment_rejects_missing_plugin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaisesRegex(FileNotFoundError, "plugin not found"):
+                configure_edge_llm_environment(
+                    Path(temporary_directory),
+                    Path(temporary_directory) / "missing.so",
+                )
+
+    def test_edge_llm_environment_rejects_missing_plugin_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch.dict(
+                "os.environ",
+                {
+                    "EDGELLM_PLUGIN_PATH": str(
+                        Path(temporary_directory) / "missing.so"
+                    )
+                },
+                clear=True,
+            ):
+                with self.assertRaisesRegex(FileNotFoundError, "plugin not found"):
+                    configure_edge_llm_environment(None, None)
+
     def test_weight_streaming_budget_is_exported_for_runtime(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             configure_weight_streaming_budget(0)

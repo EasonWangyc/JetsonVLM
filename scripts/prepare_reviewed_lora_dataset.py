@@ -112,8 +112,11 @@ def prepare_datasets(
     frozen_test_groups: set[str],
     image_root: Path,
     workload: FrozenWorkload,
+    label_source: str = "codex_visual_review_v1_single_pass",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     """返回 LoRA、校准记录和审计摘要。"""
+    if not label_source.strip():
+        raise ValueError("label_source must not be blank")
     case_ids = [str(record["sample_id"]) for record in teacher_records]
     groups = [str(record["source_group_id"]) for record in teacher_records]
     if len(case_ids) != len(set(case_ids)):
@@ -163,7 +166,7 @@ def prepare_datasets(
             "sample_id": case_id,
             "image": image_path.as_posix(),
             "source_group_id": group_id,
-            "label_source": "codex_visual_review_v1_single_pass",
+            "label_source": label_source,
             "workload_identity": workload.identity,
             "assessment": assessment.to_mapping(),
             "weak_assessment": teacher["assessment"],
@@ -214,7 +217,7 @@ def prepare_datasets(
     )
     summary = {
         "dataset_id": "ps80_reviewed_v1",
-        "label_source": "codex_visual_review_v1_single_pass",
+        "label_source": label_source,
         "reviewed_samples": len(teacher_records),
         "weak_labels_changed": weak_changed,
         "risk_levels_changed": risk_changed,
@@ -257,6 +260,11 @@ def main() -> int:
     parser.add_argument("--lora-output", required=True, type=Path)
     parser.add_argument("--calibration-output", required=True, type=Path)
     parser.add_argument("--summary-output", required=True, type=Path)
+    parser.add_argument(
+        "--label-source",
+        required=True,
+        help="本轮 annotation 的来源标识，例如 human_confirmed_v1",
+    )
     args = parser.parse_args()
 
     teacher_records = _load_development_records(
@@ -275,6 +283,7 @@ def main() -> int:
         frozen_test_groups=_frozen_test_groups(args.frozen_test_manifest),
         image_root=args.image_root,
         workload=workload,
+        label_source=args.label_source,
     )
     _write_jsonl(args.lora_output, lora_records)
     _write_jsonl(args.calibration_output, calibration_records)
