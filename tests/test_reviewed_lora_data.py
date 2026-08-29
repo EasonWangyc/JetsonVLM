@@ -52,6 +52,7 @@ class ReviewedLoraDataTests(unittest.TestCase):
             image_root=image_root,
             workload=WORKLOAD,
             label_source="human_confirmed_v1",
+            dataset_id="human_confirmed_test",
         )
 
         self.assertEqual([record["split"] for record in lora], ["train", "validation"])
@@ -60,6 +61,7 @@ class ReviewedLoraDataTests(unittest.TestCase):
         self.assertEqual(summary["group_overlap"]["lora_calibration"], 0)
         self.assertEqual(summary["group_overlap"]["development_frozen_test"], 0)
         self.assertEqual(summary["label_source"], "human_confirmed_v1")
+        self.assertEqual(summary["dataset_id"], "human_confirmed_test")
         self.assertEqual(lora[0]["label_source"], "human_confirmed_v1")
 
 

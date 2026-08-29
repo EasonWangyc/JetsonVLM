@@ -113,10 +113,13 @@ def prepare_datasets(
     image_root: Path,
     workload: FrozenWorkload,
     label_source: str = "codex_visual_review_v1_single_pass",
+    dataset_id: str = "ps80_reviewed_v1",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     """返回 LoRA、校准记录和审计摘要。"""
     if not label_source.strip():
         raise ValueError("label_source must not be blank")
+    if not dataset_id.strip():
+        raise ValueError("dataset_id must not be blank")
     case_ids = [str(record["sample_id"]) for record in teacher_records]
     groups = [str(record["source_group_id"]) for record in teacher_records]
     if len(case_ids) != len(set(case_ids)):
@@ -216,7 +219,7 @@ def prepare_datasets(
         for record in (*lora_records, *calibration_records)
     )
     summary = {
-        "dataset_id": "ps80_reviewed_v1",
+        "dataset_id": dataset_id,
         "label_source": label_source,
         "reviewed_samples": len(teacher_records),
         "weak_labels_changed": weak_changed,
@@ -265,6 +268,11 @@ def main() -> int:
         required=True,
         help="本轮 annotation 的来源标识，例如 human_confirmed_v1",
     )
+    parser.add_argument(
+        "--dataset-id",
+        default="ps80_reviewed_v1",
+        help="输出数据集的逻辑 identity，候选数据应使用显式 candidate 名称",
+    )
     args = parser.parse_args()
 
     teacher_records = _load_development_records(
@@ -284,6 +292,7 @@ def main() -> int:
         image_root=args.image_root,
         workload=workload,
         label_source=args.label_source,
+        dataset_id=args.dataset_id,
     )
     _write_jsonl(args.lora_output, lora_records)
     _write_jsonl(args.calibration_output, calibration_records)
