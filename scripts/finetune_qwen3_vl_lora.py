@@ -25,6 +25,38 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _validate_label_provenance(
+    records: list[dict[str, Any]], config: dict[str, Any]
+) -> str:
+    """Prevent candidate labels from entering a formal training run by accident."""
+    configured_source = config.get("label_source")
+    if not isinstance(configured_source, str) or not configured_source.strip():
+        raise ValueError(
+            "training config must declare a non-blank label_source; "
+            "use human_confirmed_v1 after review finalization"
+        )
+    configured_source = configured_source.strip()
+    observed_sources = {
+        record.get("label_source")
+        for record in records
+        if isinstance(record.get("label_source"), str)
+    }
+    if len(observed_sources) != 1 or configured_source not in observed_sources:
+        raise ValueError(
+            "dataset label_source does not match training config: "
+            f"configured={configured_source!r}, observed={sorted(observed_sources)!r}"
+        )
+    if (
+        configured_source == "codex_visual_review_v1_single_pass"
+        and not bool(config.get("allow_candidate_labels", False))
+    ):
+        raise ValueError(
+            "candidate Codex labels are blocked for formal LoRA training; "
+            "finalize the review package and use label_source='human_confirmed_v1'"
+        )
+    return configured_source
+
+
 def _oversample_non_low_records(
     records: list[dict[str, Any]], factor: int
 ) -> list[dict[str, Any]]:
@@ -128,6 +160,7 @@ def main() -> int:
     dataset_path = Path(config["dataset_path"]).resolve()
     workload = FrozenWorkload.load(Path(config["workload_path"]))
     records = _load_records(dataset_path)
+    label_source = _validate_label_provenance(records, config)
     unique_train_records = [
         record for record in records if record["split"] == "train"
     ]
@@ -231,6 +264,7 @@ def main() -> int:
         "base_model": model_path,
         "model_revision": config["model_revision"],
         "dataset_path": str(dataset_path),
+        "label_source": label_source,
         "workload_identity": workload.identity,
         "train_samples": len(train_records),
         "unique_train_samples": len(unique_train_records),

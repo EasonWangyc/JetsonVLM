@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.build_label_review_sheets import _resolve_image
 from scripts.build_review_package import build_review_package
 from scripts.finalize_review_package import finalize_review_package
+from scripts.inspect_review_package import inspect_review_package
 
 
 class ReviewWorkflowTests(unittest.TestCase):
@@ -204,6 +205,41 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(comparison["assessment_changed"], 1)
         self.assertEqual(comparison["risk_levels_changed"], 1)
         self.assertEqual(comparison["event_sets_changed"], 1)
+
+    def test_inspect_reports_incomplete_package_without_writing(self) -> None:
+        assessment = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            package = Path(temporary_directory) / "package.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "candidate",
+                        "candidate_assessment": assessment,
+                        "human_assessment": None,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            report = inspect_review_package(package)
+
+        self.assertFalse(report["ready_for_finalize"])
+        self.assertEqual(report["pending_count"], 1)
+        self.assertEqual(report["pending_case_ids"], ["sample-1"])
+        self.assertEqual(report["candidate_risk_level_counts"], {"low": 1})
 
 
 if __name__ == "__main__":

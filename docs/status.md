@@ -2,8 +2,9 @@
 
 ## 2026-08-29 现场复核 checkpoint
 
-- 本地仓库已提交 Codex-assisted review workflow；当前新增的复核审计改动尚未提交。
-- 无硬件测试为 `58/58` 通过；80 条 Codex 候选 package 可由
+- 本地仓库已提交 Codex-assisted review workflow；当前新增的训练 provenance 防误用改动
+  尚未提交。
+- 无硬件测试为 `61/61` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。
 - 已使用真实候选 annotation 完成一次数据生成 dry-run/校验：LoRA 共 64 条（48 train、
@@ -14,6 +15,12 @@
   `confirmed`/`corrected` 状态与内容一致，并输出候选相对人工结果的风险准确率、事件
   micro-F1 和字段修正统计。当前没有人工确认 package，因此不能把候选结果写成最终
   质量结论。
+- 正式 LoRA 训练入口现在要求训练配置声明 `label_source`，并核对所有数据记录的来源
+  一致性；候选 Codex 来源默认被拒绝。当前 `ps64_reviewed_v1` 配置因此会在启动早期
+  停止，等待人工终审后的 `human_confirmed_v1` 数据。
+- 新增 `inspect_review_package.py` 只读检查入口，可输出复核状态计数、待处理 case_id、
+  候选风险/事件分布和 `ready_for_finalize`；使用 `--fail-on-incomplete` 可将未完成复核
+  作为流程失败处理。
 - 已通过 SSH 只读连接 Jetson。板端工作树为旧提交 `f362a43` 且存在 33 项未提交/未跟踪
   改动，本轮未覆盖或清理。临时补充 venv 内 CUDA 库路径后，PyTorch `2.9.1`、CUDA
   `12.6` 和 Transformers `4.57.6` 可导入。

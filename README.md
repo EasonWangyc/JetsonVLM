@@ -224,6 +224,15 @@ Pillow：
   --output-directory reports\label-review-20260829
 ```
 
+复盘过程中可随时检查完成度；该命令只读 package，并用 `--fail-on-incomplete` 在仍有
+待处理或非法定稿记录时返回退出码 `2`：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\inspect_review_package.py `
+  --package reports\label-review-20260829\ps80_codex_review_package_v1.jsonl `
+  --fail-on-incomplete
+```
+
 复盘完成后，再使用 `scripts/prepare_reviewed_lora_dataset.py` 校验 schema、来源组隔离、
 LoRA train/validation 与 INT4 calibration 拆分。当前 package 仍属于候选标注，人工确认
 结果应写入 `human_assessment`，并将 `review_status` 改为 `confirmed` 或 `corrected`；说明
@@ -243,6 +252,11 @@ LoRA train/validation 与 INT4 calibration 拆分。当前 package 仍属于候�
 `--label-source human_confirmed_v1`；候选数据则保留
 `--label-source codex_visual_review_v1_single_pass`。生成的 LoRA/校准记录和 summary
 会沿用该来源标识。
+
+正式 LoRA 训练入口还会再次核对配置与数据集中的 `label_source`，并默认拒绝
+`codex_visual_review_v1_single_pass`。因此，当前候选数据即使已经完成 JSON schema 和
+split 校验，也不会被误用于正式训练；只有将 package 定稿为 `confirmed`/`corrected`、
+生成 `human_confirmed_v1` 数据并更新训练配置后，训练流程才会继续。
 
 定稿脚本会同时输出 `candidate_human_comparison`，包括候选风险等级准确率、事件
 micro-precision、micro-recall、micro-F1，以及整体标注、风险等级、事件集合、证据和

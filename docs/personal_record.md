@@ -1048,3 +1048,21 @@ Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，
 
 当前下一步仍是人工终审 80 条候选标注；终审完成后使用 `human_confirmed_v1` 生成训练
 和校准数据，再申请 Jetson headless/sudo 条件完成新的板端 smoke。
+
+### 2.11 2026-08-29：正式训练的标注来源闸门
+
+审计训练入口后发现，`configs/training/qwen3_vl_2b_lora_ps64_reviewed_v1.json` 原本只
+固定了数据路径，没有在训练启动前检查记录的标注来源。该配置现在显式声明
+`label_source=human_confirmed_v1`，并将 `allow_candidate_labels` 固定为 `false`。
+`scripts/finetune_qwen3_vl_lora.py` 会检查配置来源、数据集是否单一来源且完全匹配，
+并默认拒绝 `codex_visual_review_v1_single_pass`。因此当前 64 条候选训练数据会安全地
+在训练前失败，而不会生成新的 LoRA adapter；这一步把“Codex 候选可用于开发验证”和
+“人工终审后才可用于正式训练”明确分开。
+
+本轮无硬件测试为 `61/61` 通过，包含来源匹配、混合来源拒绝、候选来源拦截和人工来源
+接受四类训练入口测试。下一步是完成 80 条人工终审，将生成的数据路径和来源替换到
+训练配置，再执行服务器 Base/LoRA/merged 对照评测。
+
+同时增加 `scripts/inspect_review_package.py`，用于在人工复核过程中只读查看状态计数、
+待处理 case_id、候选标签分布和最终化就绪状态；`--fail-on-incomplete` 可作为定稿前的
+显式门禁，不会修改候选 package。
