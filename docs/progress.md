@@ -1,6 +1,23 @@
 # 项目进展记录
 
-更新时间：2026-08-17
+更新时间：2026-08-30
+
+## 0. 最新进展（2026-08-30）
+
+在同一 Jetson、同一领域 INT4 LLM engine、同一 `ps20_pilot_v1` 和同一 runtime 参数下，
+完成了 `parking_risk_v1` 与 `parking_risk_v2_strict_json` 的完整 20 样本 A/B。v2 保留
+原有 schema、输入尺寸、生成参数和枚举集合，仅强化原始 JSON 输出边界，并压缩重复提示词
+以满足 `i768` engine 的 768 token 输入上限。
+
+| Workload | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 端到端 p50 | 平均输出 tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `parking_risk_v1` | 20/20 | 20% | 15% | 0 | 10.62 s | 80.8 |
+| `parking_risk_v2_strict_json` | 20/20 | 95% | 35% | 0 | 7.43 s | 57.8 |
+
+v2 的格式有效率提升在完整冻结集上成立，但事件 micro-F1 未改善，因此该变更被定义为
+输出契约修正，不是领域识别能力提升。两次 study 均为单次重复，v2 先运行、v1 后运行，
+性能差异仅作为本轮描述性证据。报告和日志保存在本机忽略目录 `reports/`，具体 hash 与
+study identity 见 `docs/status.md` 和 `docs/personal_record.md`。
 
 ## 1. 当前结论
 
@@ -40,9 +57,11 @@ calibration；Jetson Transformers FP16 的未插桩 20 样本成功基线得到�
 得到 63 个有效训练记录，完成 3 epoch LoRA；服务器冻结 20 样本上 adapter 的严格
 JSON 为 100%、风险准确率 50%、事件 micro-F1 0.182。该结果缓解了未平衡训练的全
 low 塌缩，但事件 F1 低于旧弱监督 LoRA 的 0.389。独立 16 条领域文本随后完成 INT4
-AWQ、ONNX 导出和 Jetson engine 构建；板端 20/20 后端完成，但 16 条输出因 Markdown
-代码围栏触发严格 JSON 失败，JSON 有效率仅 20%，风险准确率 15%、事件 F1 为 0。
-该实验被保留为量化部署成功、质量验收失败的负向证据。
+AWQ、ONNX 导出和 Jetson engine 构建；原始 v1 workload 在板端 20/20 后端完成，但
+16 条输出因 Markdown 代码围栏触发严格 JSON 失败，JSON 有效率仅 20%，风险准确率
+15%、事件 F1 为 0。新增严格 JSON v2 后，完整 20 样本格式有效率提升到 95%、风险准确率
+35%，但事件 F1 仍为 0。两组结果共同说明格式修正已有效，领域风险事件识别质量仍需
+数据和模型训练改进。
 
 从项目开始至今的完整命令、结果与证据见
 [`execution-report.md`](execution-report.md)。
@@ -349,3 +368,24 @@ Jetson 冻结 20 样本后端完成 20/20，但严格 JSON 只有 4/20，16 条
 10.68 秒，聚合输出速率 7.32 token/s；260 条遥测的 RAM 峰值 5354 MB、GPU 利用率
 均值 81.88%、输入功耗均值 9.26 W、GPU 峰温 62.97 C。与旧通用 n128 INT4 相比，
 性能近似但质量更差，故不替换旧 engine 作为当前质量对照。
+
+### 7.6 严格 JSON workload v1/v2 完整 A/B（2026-08-30）
+
+为验证领域 INT4 的 Markdown 代码围栏是否可以通过 workload 约束缓解，新增
+`parking_risk_v2_strict_json`。v2 的 `schema_version`、448x448 输入、生成参数、风险
+事件和驾驶建议枚举均与 v1 相同，仅缩短重复用户提示词并强化“只输出原始 JSON 对象”的
+边界。较长的初版提示词曾达到 823 token，超过 `i768` engine 的 768 token 上限；压缩后
+通过请求。
+
+两次 study 使用同一 engine `qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024`、同一冻结集和
+同一运行时参数，均为单次重复：
+
+| Workload | Identity | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | p50 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| v1 | `parking_risk_v1@sha256:8350ace4...a493` | 20/20 | 20% | 15% | 0 | 10.62 s |
+| v2 | `parking_risk_v2_strict_json@sha256:c4695a1b...d1f4` | 20/20 | 95% | 35% | 0 | 7.43 s |
+
+v1 报告 SHA-256 为 `4e7a3faa97ddcf27a68b20ef9df54b544419793ede06e0b77d83b9317b682bd6`，
+v2 报告 SHA-256 为 `9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。
+该结果完成了格式问题的完整集验证，但未完成领域质量验收；下一步仍是人工确认 80 条
+候选标注、重新训练/量化并复测。

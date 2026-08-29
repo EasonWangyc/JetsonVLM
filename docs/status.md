@@ -28,7 +28,7 @@
 ## 2026-08-29 现场复核 checkpoint
 
 - 本地仓库已提交 Codex-assisted review workflow、训练 provenance 防误用和部署预检改动；
-  当前 `main` 比 `origin/main` 超前 10 个本地提交，未执行 push。
+  当前 `main` 比 `origin/main` 超前 11 个本地提交，未执行 push。
 - 无硬件测试为 `61/61` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。

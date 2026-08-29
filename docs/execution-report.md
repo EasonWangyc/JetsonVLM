@@ -1405,3 +1405,54 @@ aggregate output rate   = 1.443 token/s
 ```text
 reports/jetson-lora-20260813/
 ```
+
+## 23. 严格 JSON workload v1/v2 对照评测（2026-08-30）
+
+### 23.1 控制变量与新 workload
+
+领域 INT4 的旧 `parking_risk_v1` 在完整 `ps20_pilot_v1` 上出现大量 Markdown JSON 代码
+围栏。为验证输出契约修正，新增 `configs/workloads/parking_risk_v2_strict_json.json`，
+并建立独立 study 配置
+`configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json`。
+
+v2 保留 `parking_risk_v1` 的 `schema_version`、448x448 输入、`max_new_tokens=256`、
+风险事件集合和驾驶建议集合，只强化原始 JSON 对象的首尾边界与禁止 Markdown 围栏约束。
+初版重复提示词使请求达到 823 token，超过当前 `i768` engine 的 768 token 输入上限；压缩
+用户提示词后，稳定 workload identity 为
+`parking_risk_v2_strict_json@sha256:c4695a1bfa4d547f5ad90ec7697b82419dad12995829776e96c850707e15d1f4`。
+
+两次评测均使用：
+
+- Jetson engine：`qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024`；
+- LLM backend revision：`7f061f21f0a581ba234a1e233c9315b89d8e47d6`；
+- model revision：`89644892e4d85e24eaac8bacfd4f463576704203`；
+- adapter revision：`ps16-domain-calibration-v1`；
+- 数据：冻结 `ps20_pilot_v1`，manifest 和 annotation SHA-256 分别为
+  `937f98b94bda2c66276ef334917a0e962ed445aa9346fa430e6b8474cbdf2fe2` 和
+  `de83b63ae2c63c276273ef78e88f79ba53660d96065445acb26976de8e983630`；
+- 重复次数：1；功耗模式：`15W_MODE_0`。
+
+### 23.2 完整结果
+
+| Workload | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 端到端 p50/p90/p99 | 平均输出 tokens | 失败汇总 |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| `parking_risk_v1` | 20/20 | 20% | 15% | 0 | 10.62/12.10/12.55 s | 80.8 | `json_parse_error=16` |
+| `parking_risk_v2_strict_json` | 20/20 | 95% | 35% | 0 | 7.43/9.84/15.81 s | 57.8 | `json_parse_error=1` |
+
+v2 在完整冻结集上显著减少格式解析失败，风险等级准确率同步提高；但事件 micro-F1
+仍为 0，不能把该变化解释为风险事件识别能力提升。两次运行都是单次重复，且 v2 先于
+v1 运行，因此时延差异只作为本轮描述性证据。
+
+### 23.3 证据归档
+
+完整 v1 StudyReport：
+`reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_i768_k1024.json`，SHA-256
+`4e7a3faa97ddcf27a68b20ef9df54b544419793ede06e0b77d83b9317b682bd6`。
+
+完整 v2 StudyReport：
+`reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json_i768_k1024.json`，SHA-256
+`9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。
+
+服务日志分别为 `reports/jetson-int4-ps20-v1-20260830.log` 和
+`reports/jetson-int4-ps20-strict-json-20260830.log`。两次 Jetson 临时服务在评测结束后均
+已停止；远端项目旧工作树及其既有未提交改动未被覆盖或清理。
