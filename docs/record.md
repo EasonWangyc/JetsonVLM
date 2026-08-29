@@ -3968,3 +3968,5 @@ HTML 入口还支持可选的 `--reference-annotations`，本次以 `ps80_teache
 `data/processed/calibration/ps16_human_confirmed_v1.jsonl`，各 flow 均固定模型和
 Edge-LLM revision，并由 readiness 检查输入和输出状态。当前这些配置只完成静态验证，
 不代表正式模型已经训练或部署。
+README 现已补充从 `ps80_human_confirmed_v1.jsonl` 生成该训练/校准数据的完整命令，
+并固定 `--label-source human_confirmed_v1`；人工文件缺失时不执行。

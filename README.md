@@ -401,6 +401,30 @@ package。决策 JSONL 每行只包含 `case_id`、`review_status`、`human_asse
 生成的标准 annotation JSONL 再作为 `prepare_reviewed_lora_dataset.py` 的
 `--annotations` 输入。
 
+人工终审完成后，使用下面的正式数据生成命令；它将人工 annotation 写入训练与校准
+记录，并显式保留 `human_confirmed_v1` 来源。输出路径与正式 `ps64_reviewed_v1` 训练、
+合并和部署 flow 对齐：
+
+```powershell
+$env:PYTHONPATH = "src"
+& ".\.venv\Scripts\python.exe" scripts\prepare_reviewed_lora_dataset.py `
+  --development-manifest data\manifests\ps80_development_v1.jsonl `
+  --weak-annotations data\annotations\ps80_teacher_v1.jsonl `
+  --annotations data\annotations\ps80_human_confirmed_v1.jsonl `
+  --calibration-config configs\data\ps16_int4_calibration_v1.json `
+  --image-root data\processed\lora\source_images `
+  --workload configs\workloads\parking_risk_v1.json `
+  --frozen-test-manifest data\manifests\ps20_pilot_v1.jsonl `
+  --lora-output data\processed\lora\ps64_reviewed_v1.jsonl `
+  --calibration-output data\processed\calibration\ps16_human_confirmed_v1.jsonl `
+  --summary-output reports\data\ps80_human_confirmed_v1_summary.json `
+  --label-source human_confirmed_v1 `
+  --dataset-id ps80_human_confirmed_v1
+```
+
+该命令完成后，先执行训练配置的 `--validate-only`；只有返回 `validated`，再按正式
+flow 顺序执行训练、合并、导出、量化和 engine 构建。
+
 进入训练或校准数据生成时必须显式声明标注来源，例如人工终审后的数据使用
 `--label-source human_confirmed_v1`；候选数据则保留
 `--label-source codex_visual_review_v1_single_pass`。生成的 LoRA/校准记录和 summary

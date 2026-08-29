@@ -1272,3 +1272,9 @@ study。量化配置固定使用未来的 `ps16_human_confirmed_v1.jsonl`，因�
 新增配置均通过 `ExternalFlowPlan` 解析测试，并固定 TensorRT Edge-LLM commit、模型
 revision、输入长度 768、KV cache 1024 和输出目录；没有修改现有候选产物或远端 Jetson
 工作树。
+
+同时把人工终审后的正式数据生成命令补入 README：标准 annotation 使用独立的
+`ps80_human_confirmed_v1.jsonl`，LoRA 记录沿用正式训练配置的 `ps64_reviewed_v1` 路径，
+INT4 校准记录固定输出 `ps16_human_confirmed_v1.jsonl`，并通过
+`--label-source human_confirmed_v1` 写入来源事实。当前没有执行该命令，因为人工
+annotation 尚未产生。

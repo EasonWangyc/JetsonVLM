@@ -1675,3 +1675,8 @@ gate。
 这些 flow 固定 Qwen3-VL revision `89644892...`、TensorRT Edge-LLM commit
 `7f061f21...`、`i768/k1024` 和独立输出目录。当前人工校准文件和正式 adapter 尚未形成，
 因此 readiness 未就绪；配置解析与路径/版本约束已由无硬件测试覆盖。
+
+同时补齐 README 中的人工终审后数据生成命令：输入
+`ps80_human_confirmed_v1.jsonl`，输出 `ps64_reviewed_v1.jsonl` 和
+`ps16_human_confirmed_v1.jsonl`，并显式传入 `--label-source human_confirmed_v1`。该命令
+只在真实人工复核结果存在后执行，当前未提前运行。

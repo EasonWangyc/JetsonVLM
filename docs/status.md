@@ -35,6 +35,9 @@
   INT4 AWQ、INT4 ONNX 导出、FP16/INT4 LLM engine 构建，以及对应 Jetson `ps20_pilot_v1`
   study。所有 flow 仍以 `human_confirmed_v1` 数据和 merged checkpoint 的实际存在为
   前置条件。
+- README 已补充人工终审后的正式数据生成命令，固定输出
+  `data/processed/calibration/ps16_human_confirmed_v1.jsonl`，与 INT4 flow 的输入一致；
+  当前该文件尚不存在，仍需真实复核结果生成。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 

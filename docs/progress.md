@@ -421,3 +421,6 @@ micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`。合计
 LLM engine 构建，以及两个 Jetson `ps20_pilot_v1` study 配置。配置统一固定模型
 revision、Edge-LLM revision、`i768/k1024` 约束和输出路径；人工数据或上游 checkpoint
 缺失时只会显示 readiness 不满足，不会隐式执行外部流程。
+README 同步给出人工终审后的 `prepare_reviewed_lora_dataset.py` 正式命令，输出
+`ps16_human_confirmed_v1.jsonl` 并传入 `--label-source human_confirmed_v1`，可直接衔接
+训练配置的 `--validate-only`。
