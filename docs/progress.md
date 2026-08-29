@@ -411,3 +411,5 @@ micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`。合计
 并运行完整 provenance gate。
 页面增加浏览器 localStorage 草稿恢复，支持分阶段复核而不丢失当前编辑内容；该草稿
 仍不等于 finalized 决策。
+页面可额外加载 `ps80_teacher_v1.jsonl` 作为只读 reference；实际生成时 80/80 case_id
+对齐，人工可以并列查看 teacher、Codex candidate 和模型输出，reference 不参与正式定稿。

@@ -28,6 +28,9 @@
   `apply_review_decisions.py` 的 JSONL。当前生成页面已嵌入 80 张图片，仍需人工实际
   复核后才能形成 `human_confirmed_v1`；页面另将未完成草稿保存到当前浏览器本地，不写入
   仓库；新增功能后无硬件测试累计 `78/78` 通过。
+- 页面支持可选的 `--reference-annotations` 只读输入；当前实际使用
+  `data/annotations/ps80_teacher_v1.jsonl`，80/80 case 对齐并显示 teacher/reference、
+  Codex candidate 和模型输出三方上下文。teacher 仅用于复核上下文，不是人工金标。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 

@@ -329,6 +329,7 @@ Pillow：
 ```powershell
 & ".\.venv\Scripts\python.exe" scripts\build_review_html.py `
   --error-review reports\label-review-20260830\ps80_candidate_error_review_v1.json `
+  --reference-annotations data\annotations\ps80_teacher_v1.jsonl `
   --image-root data\processed\lora\source_images `
   --output reports\label-review-20260830\ps80_candidate_review.html
 ```
@@ -339,6 +340,10 @@ Pillow：
 `--require-complete` 检查 80 条是否全部定稿。页面会将当前草稿自动保存到当前浏览器的
 本地存储中，关闭页面后重新打开同一文件可以恢复；草稿不会写入仓库或自动进入正式
 package。
+
+`--reference-annotations` 是可选的只读对照输入；本项目用它展示原始 teacher 结果，方便
+比较 teacher、Codex candidate 和模型输出。它不是人工金标，不会进入下载的
+`human_assessment`，也不会改变 provenance gate。
 
 复盘过程中可随时检查完成度；该命令只读 package，并用 `--fail-on-incomplete` 在仍有
 待处理或非法定稿记录时返回退出码 `2`：

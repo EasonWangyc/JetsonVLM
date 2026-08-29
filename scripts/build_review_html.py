@@ -24,6 +24,32 @@ def _load_items(path: Path) -> list[dict[str, Any]]:
     return items
 
 
+def _load_reference_annotations(path: Path | None) -> dict[str, dict[str, Any]]:
+    if path is None:
+        return {}
+    references: dict[str, dict[str, Any]] = {}
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise ValueError(f"reference annotation must be an object: {path}:{line_number}")
+        case_id = value.get("case_id")
+        assessment = value.get("assessment")
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError(f"reference case_id must be a non-blank string: {path}:{line_number}")
+        if case_id in references:
+            raise ValueError(f"duplicate reference case_id: {case_id}")
+        if not isinstance(assessment, dict):
+            raise ValueError(f"reference assessment must be an object: {case_id}")
+        references[case_id] = assessment
+    if not references:
+        raise ValueError(f"reference annotations must not be empty: {path}")
+    return references
+
+
 def _image_data_uri(path: Path) -> str:
     mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -61,9 +87,11 @@ def build_review_html(
     error_review_path: Path,
     image_root: Path,
     output_path: Path,
+    reference_annotations_path: Path | None = None,
 ) -> dict[str, Any]:
     """Build a self-contained offline HTML review page."""
     raw_items = _load_items(error_review_path)
+    references = _load_reference_annotations(reference_annotations_path)
     case_ids: set[str] = set()
     cases: list[dict[str, Any]] = []
     cards: list[str] = []
@@ -109,6 +137,13 @@ def build_review_html(
             candidate.get("risk_level", "unknown"),
             ",".join(candidate.get("events", [])) or "no_event",
         )
+        reference = references.get(case_id)
+        reference_text = ""
+        if reference is not None:
+            reference_text = "reference: {} | {}".format(
+                reference.get("risk_level", "unknown"),
+                ",".join(reference.get("events", [])) or "no_event",
+            )
         risk_options = "".join(
             '<option value="{}"{}>{}</option>'.format(
                 _escape(risk),
@@ -128,6 +163,7 @@ def build_review_html(
                 split=_escape(item.get("split")),
                 source_group=_escape(item.get("source_group_id")),
                 candidate_text=_escape(candidate_text),
+                reference_text=_escape(reference_text),
                 model_text=_escape(model_text),
                 risk_options=risk_options,
                 event_checks=_checks(events, candidate.get("events", []), "events"),
@@ -137,6 +173,13 @@ def build_review_html(
             )
         )
 
+    case_id_set = set(case_ids)
+    if references and set(references) != case_id_set:
+        missing = sorted(case_id_set - set(references))
+        unexpected = sorted(set(references) - case_id_set)
+        raise ValueError(
+            f"reference annotations must cover error review exactly; missing={missing}, unexpected={unexpected}"
+        )
     document = _PAGE_TEMPLATE.replace("__CARDS__", "\n".join(cards)).replace(
         "__CASES__", _json_for_script(cases)
     )
@@ -146,6 +189,7 @@ def build_review_html(
         "output_path": str(output_path),
         "sample_count": len(cases),
         "embedded_image_count": len(cases),
+        "reference_count": len(references),
         "ready_for_review": True,
     }
 
@@ -155,6 +199,11 @@ def main() -> int:
     parser.add_argument("--error-review", required=True, type=Path)
     parser.add_argument("--image-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--reference-annotations",
+        type=Path,
+        help="可选的只读对照 annotation JSONL，例如原始 teacher 结果",
+    )
     args = parser.parse_args()
     print(
         json.dumps(
@@ -162,6 +211,7 @@ def main() -> int:
                 error_review_path=args.error_review,
                 image_root=args.image_root,
                 output_path=args.output,
+                reference_annotations_path=args.reference_annotations,
             ),
             ensure_ascii=False,
             indent=2,
@@ -178,6 +228,7 @@ _CARD_TEMPLATE = """<article class=\"card {priority_class}\" data-case-id=\"{cas
 <div class=\"context\">split: {split}
 source_group: {source_group}
 {candidate_text}
+{reference_text}
 {model_text}</div>
 <label>复核状态 <select data-field=\"status\"><option value=\"pending\">pending</option><option value=\"confirmed\">confirmed</option><option value=\"corrected\">corrected</option></select></label>
 <fieldset><legend>人工确认风险等级</legend><select data-field=\"risk\">{risk_options}</select></fieldset>

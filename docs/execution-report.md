@@ -1659,3 +1659,8 @@ case、非法 assessment 或不支持的状态都会在写出前失败。`--requ
 为降低长时间复核的中断风险，页面增加浏览器 localStorage 草稿保存和恢复。它只保存
 当前浏览器中的编辑状态，不写入项目文件；只有用户主动下载并应用 finalized 决策时，
 review package 才会发生变化。
+
+页面支持可选的 `--reference-annotations`。本次传入
+`data/annotations/ps80_teacher_v1.jsonl`，实际校验 80/80 case_id 与错误复核清单一致，
+并将 teacher 结果作为只读对照展示；该输入不参与人工决策导出，也不改变最终 provenance
+gate。

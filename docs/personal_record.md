@@ -1256,3 +1256,7 @@ train/validation split、图片、workload 和模型目录，不导入 CUDA 训�
 页面还会将 pending、confirmed、corrected 以及当前字段内容保存到浏览器 localStorage，
 重新打开同一 HTML 文件时恢复草稿；该状态不写入仓库，也不改变 review package 的
 `candidate` 状态。
+
+页面另支持 `--reference-annotations` 展示只读 teacher 对照。本次用
+`ps80_teacher_v1.jsonl` 实测 80/80 case 对齐，使人工复核可以同时查看 teacher、Codex
+candidate 和模型输出；teacher 仍不被当作人工金标或最终训练标签。

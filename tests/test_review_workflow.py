@@ -487,18 +487,39 @@ class ReviewWorkflowTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            reference = root / "teacher.jsonl"
+            reference.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "assessment": {
+                            "schema_version": "parking_risk_v1",
+                            "risk_level": "high",
+                            "events": ["vehicle_near_maneuver_path"],
+                            "evidence": ["有车辆靠近路径。"],
+                            "driver_advice": ["prepare_to_stop"],
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             output = root / "review.html"
             summary = build_review_html(
                 error_review_path=review,
                 image_root=image_root,
                 output_path=output,
+                reference_annotations_path=reference,
             )
             document = output.read_text(encoding="utf-8")
 
         self.assertEqual(summary["sample_count"], 1)
+        self.assertEqual(summary["reference_count"], 1)
         self.assertTrue(summary["ready_for_review"])
         self.assertIn("data:image/jpeg;base64,ZmFrZS1qcGVn", document)
         self.assertIn("sample-1", document)
+        self.assertIn("reference: high | vehicle_near_maneuver_path", document)
         self.assertIn("review_decisions_batch.jsonl", document)
         self.assertIn("localStorage", document)
         self.assertIn("restoreDraft", document)
