@@ -23,6 +23,8 @@
   作为流程失败处理。
 - Edge-LLM 服务入口新增 `--check-only` 静态预检；它已在 Jetson 现有 FP16 engine、
   Edge-LLM pybind 和 plugin 路径上完成检查，可区分文件/路径就绪与实际 GPU 加载成功。
+- 服务入口同时支持 `--llm-engine-root` 与 `--visual-engine-root` 分目录模式，覆盖
+  LoRA/INT4 LLM engine 复用 FP16 visual engine 的实际部署结构。
 - 已通过 SSH 只读连接 Jetson。板端工作树为旧提交 `f362a43` 且存在 33 项未提交/未跟踪
   改动，本轮未覆盖或清理。临时补充 venv 内 CUDA 库路径后，PyTorch `2.9.1`、CUDA
   `12.6` 和 Transformers `4.57.6` 可导入。

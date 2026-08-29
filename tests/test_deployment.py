@@ -109,6 +109,29 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(report["ready"])
         self.assertEqual(len(report["missing_engines"]), 1)
 
+    def test_deployment_readiness_supports_separate_llm_and_visual_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            llm_root = root / "int4" / "llm"
+            visual_root = root / "fp16" / "visual"
+            llm_root.mkdir(parents=True)
+            visual_root.mkdir(parents=True)
+            (llm_root / "llm.engine").write_bytes(b"llm")
+            (visual_root / "visual.engine").write_bytes(b"visual")
+
+            with patch.dict("os.environ", {}, clear=True):
+                report = deployment_readiness(
+                    llm_engine_root=llm_root,
+                    visual_engine_root=visual_root,
+                    edge_llm_root=None,
+                    plugin_path=None,
+                )
+
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["missing_engines"], [])
+        self.assertEqual(report["llm_engine_root"], str(llm_root.resolve()))
+        self.assertEqual(report["visual_engine_root"], str(visual_root.resolve()))
+
     def test_vlm_engine_builder_prepares_llm_then_visual_build(self) -> None:
         edge_root = Path("/opt/TensorRT-Edge-LLM")
         onnx_root = Path("/work/onnx")

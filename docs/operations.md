@@ -70,6 +70,18 @@ export LD_LIBRARY_PATH=$JETSON_PY_CUDA_LIB:/home/ubuntu/TensorRT-Edge-LLM/build:
 预检返回 `ready=true` 只证明文件和路径齐全，不代表统一内存、CUDA graph 或 HTTP
 服务一定能启动；这些仍需实际板端加载和请求验证。
 
+LoRA 或 INT4 只有 LLM engine 时，可将其与 FP16 visual engine 分开指定；服务会把两个
+目录传给同一个 Edge-LLM 实例：
+
+```bash
+.venv-jetson/bin/python scripts/serve_edgellm.py \
+  --check-only \
+  --edge-llm-root /home/ubuntu/TensorRT-Edge-LLM \
+  --llm-engine-root artifacts/engines/qwen3_vl_2b_int4_awq_i768_k1024/llm \
+  --visual-engine-root artifacts/engines/qwen3_vl_2b_fp16/visual \
+  --plugin-path /home/ubuntu/TensorRT-Edge-LLM/build/libNvInfer_edgellm_plugin.so
+```
+
 ```bash
 cd /home/ubuntu/JetsonVLM
 export JETSON_PY_CUDA_LIB=$PWD/.venv-jetson/lib/python3.10/site-packages/nvidia/cu12/lib
