@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from textwrap import wrap
 from typing import Any, Mapping
 
 
@@ -75,7 +76,8 @@ def build_contact_sheets(
 
     output_directory.mkdir(parents=True, exist_ok=True)
     font = ImageFont.load_default(size=18)
-    header_height = 46
+    header_height = 88
+    line_height = 20
     page_size = columns * rows
     page_count = math.ceil(len(records) / page_size)
     written: list[Path] = []
@@ -102,14 +104,31 @@ def build_contact_sheets(
             image_top = top + header_height + (cell_height - preview.height) // 2
             sheet.paste(preview, (image_left, image_top))
             case_id = str(record.get("case_id", image_path.stem))
-            index_label = f"{page_index * page_size + cell_index + 1:02d}  {case_id}"
-            draw.text((left + 6, top + 5), index_label, fill="black", font=font)
+            header_lines = wrap(
+                f"{page_index * page_size + cell_index + 1:02d}  {case_id}",
+                width=34,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
             if candidate_annotations and case_id in candidate_annotations:
                 assessment = candidate_annotations[case_id]
                 risk_level = str(assessment.get("risk_level", "unknown"))
                 events = ",".join(str(event) for event in assessment.get("events", []))
-                candidate_label = f"candidate: {risk_level} | {events or 'no_event'}"
-                draw.text((left + 6, top + 23), candidate_label, fill="#444444", font=font)
+                header_lines.extend(
+                    wrap(
+                        f"candidate: {risk_level} | {events or 'no_event'}",
+                        width=34,
+                        break_long_words=False,
+                        break_on_hyphens=False,
+                    )
+                )
+            for line_index, line in enumerate(header_lines[:4]):
+                draw.text(
+                    (left + 6, top + 4 + line_index * line_height),
+                    line,
+                    fill="black" if line_index == 0 else "#444444",
+                    font=font,
+                )
             draw.rectangle(
                 (left, top, left + cell_width - 1, top + cell_height + header_height - 1),
                 outline="#777777",
