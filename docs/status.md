@@ -1,5 +1,21 @@
 # 当前实现状态
 
+## 2026-08-30 候选 LoRA 80 条服务器开发集评测
+
+- 在本地 RTX 4060 上复用候选 adapter、Qwen3-VL revision 和
+  `parking_risk_v2_strict_json` workload，完成 `ps80_development_v1` 的 64 条 train 与
+  16 条 validation 评测。两处分片均为严格 JSON `100%`，风险准确率分别为 `57.81%` 和
+  `62.50%`，事件 micro-F1 均为 `0`，不安全建议率分别为 `32.81%` 和 `18.75%`；合计
+  为 `80/80` 严格 JSON、风险准确率 `58.75%`、事件 micro-F1 `0`、不安全建议率
+  `30.00%`。
+- 该结果确认服务器训练后评测闭环已跑通，但候选 adapter 的风险事件识别仍不达标，且
+  参考标签仍为 Codex 候选结果。正式模型仍需等待人工终审后的 `human_confirmed_v1`。
+- 对应配置为
+  `server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json` 和
+  validation 版本；报告 SHA-256 分别为
+  `d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
+  `d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
+
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 
 - 新增 `configs/workloads/parking_risk_v2_strict_json.json` 和对应的

@@ -1198,3 +1198,27 @@ Jetson train/validation StudyReport，并与 `ps80_reviewed_v1` 候选 annotatio
 `visibility_occlusion`（9）。清单输出为
 `reports/label-review-20260830/ps80_candidate_error_review_v1.json`，仅支持人工复核，
 不会改变候选 annotation 或自动生成 `human_confirmed_v1`。
+
+### 2.18 2026-08-30：候选 LoRA 的 80 条服务器开发集评测
+
+为确认“候选标注—LoRA 训练—服务器评测”闭环，复用本地 RTX 4060、同一 Qwen3-VL
+revision、同一 `parking_risk_v2_strict_json` workload 和已生成的候选 adapter，分别对
+`ps80_development_v1` 的 64 条 train、16 条 validation 执行一次评测。参考标签仍为
+`ps80_reviewed_v1` 的 Codex 候选结果，因而本轮属于开发验证，不是人工金标质量验收。
+
+| 分片 | 样本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| train | 64 | 100% | 57.81% | 0 | 32.81% | 3424 ms |
+| validation | 16 | 100% | 62.50% | 0 | 18.75% | 4087 ms |
+| 合计 | 80 | 100% | 58.75% | 0 | 30.00% | 分片口径 |
+
+两处分片均完成严格 JSON 解析，且 validation 风险准确率没有低于 train；但两者事件
+micro-F1 都为 0，不能据此判断模型已学会六类风险事件。相较冻结 `ps20_pilot_v1` 的
+候选 adapter 结果，本轮 workload 与参考标签不同，不能直接进行质量横向比较；正式
+结论仍必须以人工确认的 `human_confirmed_v1` 和冻结测试集为准。
+
+本轮配置为
+`configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json`
+和 validation 版本。报告保存在本地忽略目录 `reports/`，SHA-256 分别为
+`d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
+`d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。

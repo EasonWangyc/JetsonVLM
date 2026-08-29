@@ -1564,3 +1564,46 @@ Jetson StudyReport，要求三者的 case_id 集合完全一致，然后生成�
 人工复核时应优先处理高优先级 case，完成 `confirmed`/`corrected` 状态和 review note
 后，再使用 `finalize_review_package.py` 生成 `human_confirmed_v1` 数据；候选复核清单
 本身不会改变标注来源，也不会解除正式训练的 provenance gate。
+
+## 27. 候选 LoRA 的 80 条服务器开发集评测（2026-08-30）
+
+### 27.1 评测边界
+
+在本地 RTX 4060、Transformers 5.9.0、同一 Qwen3-VL revision 和
+`parking_risk_v2_strict_json` workload 下，使用已完成训练的 Codex 候选 adapter，分别
+评测 `ps80_development_v1` 的 train/validation 分片。参考 annotation 是
+`ps80_reviewed_v1` 的候选结果，不是人工终审金标；本轮用于确认开发闭环和训练后行为，
+不用于正式质量验收。
+
+### 27.2 结果
+
+| 分片 | 样本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| train | 64 | 100% | 57.81% | 0 | 32.81% | 3424 ms |
+| validation | 16 | 100% | 62.50% | 0 | 18.75% | 4087 ms |
+| 合计 | 80 | 100% | 58.75% | 0 | 30.00% | 分片口径 |
+
+两处分片均无 JSON 解析失败，风险等级准确率接近，但事件 micro-F1 均为 0；因此候选
+adapter 已完成服务器推理闭环，却没有达到可用于领域风险事件识别的质量标准。train 与
+validation 的不安全建议率分别为 32.81% 和 18.75%，也需要在人工确认数据后重新验收。
+
+### 27.3 可复现配置与证据
+
+```text
+configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json
+configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_validation_strict_json.json
+```
+
+报告位于本机忽略目录：
+
+```text
+reports/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json_89644892.json
+SHA-256: d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf
+
+reports/server_transformers_lora_ps64_codex_candidate_v1_ps80_validation_strict_json_89644892.json
+SHA-256: d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87
+```
+
+本轮结果不能替代人工终审；后续正式路径仍为人工确认 80 条候选标注、生成
+`human_confirmed_v1`、重新训练/合并/量化，并在冻结 `ps20_pilot_v1` 上统一 workload 和
+指标口径复测。

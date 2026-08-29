@@ -130,6 +130,27 @@ case，其中 77 条 JSON 有效、47 条风险等级匹配、30 个 case 存在
 `reports/label-review-20260830/ps80_candidate_error_review_v1.json`，候选标签仍需
 人工确认或修正后才能生成 `human_confirmed_v1`。
 
+### 候选 LoRA 的 80 条服务器开发集评测
+
+在本地 RTX 4060、Transformers 5.9.0、同一 Qwen3-VL revision 和同一
+`parking_risk_v2_strict_json` workload 下，对已训练的 Codex 候选 LoRA adapter 分别评测
+64 条 train 和 16 条 validation。参考标签仍是 `ps80_reviewed_v1` 候选结果，不能替代
+人工确认标签；该实验用于确认训练后模型、评测入口和 80 条开发数据的闭环状态。
+
+| 分片 | 样本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+|---|---:|---:|---:|---:|---:|---:|
+| train | 64 | 100% | 57.81% | 0 | 32.81% | 3424 ms |
+| validation | 16 | 100% | 62.50% | 0 | 18.75% | 4087 ms |
+| 合计 | 80 | 100% | 58.75% | 0 | 30.00% | 分片口径 |
+
+两处分片的严格 JSON 解析均成功，风险等级准确率接近，但事件 micro-F1 均为 0，说明
+候选 adapter 没有形成可用的风险事件识别能力；validation 的结果也没有证明领域质量
+已经达标。配置为
+`configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json`
+和 validation 版本。报告位于本地忽略目录 `reports/`，SHA-256 分别为
+`d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
+`d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
+
 ## 实验结果
 
 ### Jetson 同机运行时对比
