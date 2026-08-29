@@ -1229,7 +1229,7 @@ micro-F1 都为 0，不能据此判断模型已学会六类风险事件。相较
 `candidate` 记录；`confirmed` 且 assessment 为 `null` 时显式复制候选 assessment，
 `corrected` 则要求提供不同的结构化 assessment 和非空 review note。`--require-complete`
 用于人工终审结束后的全量门禁；同一入口也能生成初始状态为 `candidate` 的 80 条决策
-模板。本轮新增 4 个工作流测试，无硬件测试累计 74 个通过。
+模板。本轮新增 4 个工作流测试，无硬件测试累计 76 个通过。
 
 为把正式训练门禁提前到模型加载前，`scripts/finetune_qwen3_vl_lora.py` 新增
 `--validate-only`。该模式只检查 dataset、label provenance、assessment schema、

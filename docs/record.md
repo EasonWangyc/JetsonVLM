@@ -3921,7 +3921,7 @@ d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87
 `ParkingAssessment` 和非空 `review_note`。`--require-complete` 会要求全部 package
 记录完成后才通过门禁。
 
-本阶段累计无硬件测试 `74/74` 通过。当前正式质量路径仍为：
+本阶段累计无硬件测试 `76/76` 通过。当前正式质量路径仍为：
 
 ```text
 人工终审 80 条候选标注
