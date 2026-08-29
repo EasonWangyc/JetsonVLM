@@ -104,6 +104,26 @@ SHA-256 为 `4e7a3faa97ddcf27a68b20ef9df54b544419793ede06e0b77d83b9317b682bd6`�
 `reports/jetson-int4-ps20-v1-20260830.log` 和 `reports/jetson-int4-ps20-strict-json-20260830.log`。
 后续应在人工确认数据完成后，重新训练/量化并用同一完整 study 口径验收。
 
+### 80 条 Codex 候选样本开发评测
+
+为验证“先用 Codex 跑通识别与评测流程”的可行性，复用同一 Jetson INT4 engine 和
+`parking_risk_v2_strict_json` workload，对 `ps80_development_v1` 的 64 条 train、16 条
+validation 候选分片分别运行一次。参考标注来自 `ps80_reviewed_v1` 的 Codex 候选结果，
+不属于人工终审金标，也不替代 `ps20_pilot_v1` 冻结测试集。
+
+| 分片 | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 失败 |
+|---|---:|---:|---:|---:|---:|---:|
+| train（64） | 64/64 | 95.31% | 57.81% | 0 | 31.25% | `json_parse_error=3` |
+| validation（16） | 16/16 | 100% | 62.50% | 0 | 18.75% | 无 |
+| 合计（80） | 80/80 | 96.25% | 58.75% | 0 | 28.75% | `json_parse_error=3` |
+
+这证明 80 条样本可以被当前识别流程完整处理并形成可审计记录，但当前模型几乎不输出
+正确的风险事件，不能据此宣称领域识别能力达标。可复现实验配置为
+`configs/studies/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json.json`
+和对应的 validation 配置；原始报告保存在本地忽略目录 `reports/`，其 SHA-256 分别为
+`21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671` 和
+`8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`。
+
 ## 实验结果
 
 ### Jetson 同机运行时对比

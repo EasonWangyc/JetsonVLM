@@ -1456,3 +1456,47 @@ v1 运行，因此时延差异只作为本轮描述性证据。
 服务日志分别为 `reports/jetson-int4-ps20-v1-20260830.log` 和
 `reports/jetson-int4-ps20-strict-json-20260830.log`。两次 Jetson 临时服务在评测结束后均
 已停止；远端项目旧工作树及其既有未提交改动未被覆盖或清理。
+
+## 24. 80 条 Codex 候选样本 Jetson 开发评测（2026-08-30）
+
+### 24.1 评测边界
+
+为验证候选标注能否支撑完整的识别与报告流程，复用领域 INT4 engine
+`qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024` 和严格 JSON workload，对
+`ps80_development_v1` 的 train/validation 分片分别执行一次。参考 annotation 为
+Codex 候选结果，实验不使用 `ps20_pilot_v1`，也不把候选标签当成人工确认金标。
+Jetson 原仓库存在既有 dirty 改动，本次仅使用临时目录和既有 engine，未覆盖或清理原仓库。
+
+### 24.2 结果
+
+| 分片 | 样本 | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 失败 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| train | 64 | 64/64 | 95.31% | 57.81% | 0 | 31.25% | `json_parse_error=3` |
+| validation | 16 | 16/16 | 100% | 62.50% | 0 | 18.75% | 无 |
+| 合计 | 80 | 80/80 | 96.25% | 58.75% | 0 | 28.75% | `json_parse_error=3` |
+
+80 条输入均获得后端处理结果，说明候选数据、图片路径、workload、HTTP runtime 和
+StudyReport 生成流程已打通；但事件 micro-F1 为 0，且不安全建议率仍为 28.75%，所以
+当前结果只能支持流程可用性判断，不能支持领域模型质量达标判断。
+
+### 24.3 可复现配置与证据
+
+配置文件：
+
+```text
+configs/studies/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json.json
+configs/studies/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_validation_strict_json.json
+```
+
+本机忽略目录中的 StudyReport：
+
+```text
+reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json_i768_k1024.json
+SHA-256: 21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671
+
+reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_validation_strict_json_i768_k1024.json
+SHA-256: 8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd
+```
+
+评测服务在报告写入后已停止；后续应在人工终审数据后，以 `human_confirmed_v1` 重新
+训练和量化，并在冻结 `ps20_pilot_v1` 上执行正式质量验收。

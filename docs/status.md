@@ -27,6 +27,15 @@
   归档于 `reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json_i768_k1024.json`，
   SHA-256 为 `9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。两次服务
   均已停止。
+- 复用同一 engine 对 80 条 Codex 候选开发样本完成一次 train/validation 分片评测：
+  `64+16` 条后端全部完成，严格 JSON `77/80=96.25%`，候选标签上的风险准确率
+  `47/80=58.75%`，事件 micro-F1 `0`，不安全建议率 `23/80=28.75%`，共有 3 条
+  `json_parse_error`。该结果只用于开发流程和错误分析，不是人工确认后的质量结论。
+- 对应配置为
+  `jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json` 与 validation
+  版本；报告 SHA-256 分别为
+  `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671` 和
+  `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`。评测服务已停止。
 
 ## 2026-08-29 现场复核 checkpoint
 

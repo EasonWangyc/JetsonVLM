@@ -1142,3 +1142,24 @@ Qwen3-VL processor、同一图片和 engine chat template，v1/v2 输入 token �
 为 `9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。下一步应在人工
 确认数据完成后重新训练/量化，并继续用完整冻结集比较 JSON 有效率、风险准确率、事件
 micro-F1、输出 token 数和端到端分位数。
+
+### 2.15 2026-08-30：80 条 Codex 候选样本开发评测
+
+为验证候选数据能否跑通完整识别流程，在同一 Jetson INT4 engine、同一 v2 严格 JSON
+workload 和同一运行时参数下，分别评测 `ps80_development_v1` 的 64 条 train 与 16 条
+validation。参考 annotation 是 Codex 候选结果，不是人工终审金标，因此该实验仅用于
+流程验证和错误分析。
+
+合并 80 条结果后，后端完成率为 `80/80`，严格 JSON 有效率为 `77/80=96.25%`，候选
+标签上的风险等级准确率为 `47/80=58.75%`，事件 micro-F1 为 `0`，不安全建议率为
+`23/80=28.75%`，3 条失败均为 `json_parse_error`，且均位于 train 分片。train 分片
+自身为严格 JSON `95.31%`、风险准确率 `57.81%`；validation 分片为 `100%` 和 `62.50%`。
+结果表明当前链路可以稳定处理 80 条输入，但模型对风险事件的输出仍未达到可用水平。
+
+新增可复现配置为
+`configs/studies/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json.json`
+和 validation 版本。报告分别为
+`reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json_i768_k1024.json`
+（SHA-256 `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671`）和
+`reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_validation_strict_json_i768_k1024.json`
+（SHA-256 `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`）。
