@@ -1113,16 +1113,21 @@ output tokens。模型输出风险等级为 `low`、事件为 `vehicle_near_mane
 其稳定 identity 为
 `parking_risk_v2_strict_json@sha256:c4695a1bfa4d547f5ad90ec7697b82419dad12995829776e96c850707e15d1f4`。
 
-在 Jetson 领域 INT4 LLM engine、复用 FP16 visual engine、固定 `001.jpg` 和同一
-runtime 参数下完成 A/B：v1 的 91-token 响应含 Markdown 代码围栏，记录为
-`json_parse_error`；v2 返回 59 tokens，成功解析为 `ParkingAssessment`，风险等级为
-`low`、事件为空、驾驶建议为 `maintain_observation`，端到端约 8.22 秒，
-`failure=null`。第一次使用较长 v2 提示词时，服务明确报告输入 823 token 超出 engine
-支持的 768 token；压缩后请求通过，说明格式约束和输入预算需要共同设计。
+在 Jetson 领域 INT4 LLM engine、复用 FP16 visual engine、冻结 `ps20_pilot_v1` 和同一
+runtime 参数下完成完整 A/B。v1 运行结果为 20/20 后端完成、严格 JSON 有效率 20%、风险
+等级准确率 15%、事件 micro-F1 0、端到端 p50 10.62 秒；v2 运行结果为 20/20、95%、35%、
+0、p50 7.43 秒。v1 有 16 条 `json_parse_error`，v2 只有 1 条；v2 的平均输出长度也从
+80.8 tokens 降至 57.8 tokens。v2 的格式有效率提升在完整冻结集上成立，但事件识别质量
+没有改善，不能把该 workload 修正描述为领域能力提升。
 
-本次只验证 1 张图片，不能替代 `ps20_pilot_v1` 的正式质量评测。新 study 配置为
+第一次使用较长 v2 提示词时，服务明确报告输入 823 token 超出 engine 支持的 768 token；
+压缩后请求通过，说明格式约束和输入预算需要共同设计。两次完整 study 均为单次重复，且
+v2 先运行、v1 后运行，端到端 p50 仅作本轮描述性证据。
+
+新 study 配置为
 `configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json`，原始日志
-为 `reports/jetson-int4-strict-json-smoke-20260830.log`，SHA-256 为
-`6850bee6589a026cd4e2a24cb6d7e8e5e090341bcf0ee94ac4619cfd577af5a1`。下一步是在完整
-冻结集上比较 v1/v2 的 JSON 有效率、风险准确率、事件 micro-F1、输出 token 数和端到端
-分位数，再决定是否将 v2 设为后续 Jetson study 的 workload。
+为 `reports/jetson-int4-ps20-strict-json-20260830.log`；StudyReport 为
+`reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json_i768_k1024.json`，SHA-256
+为 `9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。下一步应在人工
+确认数据完成后重新训练/量化，并继续用完整冻结集比较 JSON 有效率、风险准确率、事件
+micro-F1、输出 token 数和端到端分位数。

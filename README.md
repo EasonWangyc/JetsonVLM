@@ -70,7 +70,7 @@ TensorRT Edge-LLM 部署和可审计评测。
 - 旧通用校准 INT4 的端到端 p50 约 10.52 秒，但事件 micro-F1 退化为 0。
 - 最新 16 条领域校准数据生成的 INT4 engine 运行完成 20/20，但严格 JSON 有效率只有 20%，主要失败模式是 Markdown `json` 代码围栏。
 - 最新复核数据训练出的 LoRA adapter 在服务器冻结集上的风险准确率为 50%、事件 micro-F1 为 0.182；合并模型为 45% 和 0.100，尚未形成整体质量提升。
-- 新增的 `parking_risk_v2_strict_json` 在保留 `parking_risk_v1` schema 的同时强化原始 JSON 边界；Jetson 领域 INT4 单图 A/B 中，v1 因代码围栏解析失败，v2 成功解析，说明格式修正有效，但仍需在冻结 20 样本上复测。
+- 新增的 `parking_risk_v2_strict_json` 在保留 `parking_risk_v1` schema 的同时强化原始 JSON 边界；Jetson 领域 INT4 完整 20 样本 A/B 中，严格 JSON 有效率从 v1 的 20% 提升到 95%，但事件 micro-F1 仍为 0。
 
 因此，当前优先级是扩大并人工终审领域标注、修正 LoRA 数据偏置、分析量化后的格式退化，再进行新模型的 Jetson 复测。
 
@@ -81,19 +81,23 @@ TensorRT Edge-LLM 部署和可审计评测。
 而不是 schema 或生成配置变化。v2 明确要求输出原始 JSON 对象，禁止 Markdown 代码围栏和前后说明；同时将重复的字段
 说明压缩到 workload 渲染器追加的统一约束中，避免超过当前 `i768` engine 的最大输入长度。
 
-在 Jetson 领域 INT4 engine `qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024`、固定图片
-`data/raw/ps2.0/pilot/indoor/001.jpg` 和相同运行时参数下完成单图验证：
+在 Jetson 领域 INT4 engine `qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024`、冻结的
+`ps20_pilot_v1`、相同运行时参数下完成 20 样本 A/B；两次运行均为单次重复，v2 先运行、
+v1 后运行：
 
-| Workload | Workload identity | 输入边界 | 严格 JSON | 端到端 | 输出 tokens | 结果 |
-|---|---|---:|---:|---:|---:|---|
-| `parking_risk_v1` | `parking_risk_v1@sha256:8350ace4...a493` | 通过 | 失败 | 约 12.45 s | 91 | `json_parse_error`，输出含 Markdown 代码围栏 |
-| `parking_risk_v2_strict_json` | `parking_risk_v2_strict_json@sha256:c4695a1b...d1f4` | 通过 | 成功 | 8.22 s | 59 | `ParkingAssessment` 解析成功，`failure=null` |
+| Workload | Workload identity | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 端到端 p50 | 平均输出 tokens |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `parking_risk_v1` | `parking_risk_v1@sha256:8350ace4...a493` | 20/20 | 20% | 15% | 0 | 10.62 s | 80.8 |
+| `parking_risk_v2_strict_json` | `parking_risk_v2_strict_json@sha256:c4695a1b...d1f4` | 20/20 | 95% | 35% | 0 | 7.43 s | 57.8 |
 
-该 A/B 只有单图，不能作为整体质量或性能结论；原始服务日志见
-`reports/jetson-int4-strict-json-smoke-20260830.log`，SHA-256 为
-`6850bee6589a026cd4e2a24cb6d7e8e5e090341bcf0ee94ac4619cfd577af5a1`。正式比较应使用新的
-`configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json` 在完整
-`ps20_pilot_v1` 上运行，并记录 token 长度、解析失败率和风险质量指标。
+该 A/B 已覆盖完整冻结集，但仍是单次重复，不能单独作为稳定性能结论；v2 的格式有效率
+明显提高，风险等级准确率也提高，但事件 micro-F1 没有改善，说明提示词修正尚未解决领域
+识别质量。v1 报告见 `reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_i768_k1024.json`，
+SHA-256 为 `4e7a3faa97ddcf27a68b20ef9df54b544419793ede06e0b77d83b9317b682bd6`；v2 报告见
+`reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json_i768_k1024.json`，SHA-256 为
+`9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。两次服务日志分别为
+`reports/jetson-int4-ps20-v1-20260830.log` 和 `reports/jetson-int4-ps20-strict-json-20260830.log`。
+后续应在人工确认数据完成后，重新训练/量化并用同一完整 study 口径验收。
 
 ## 实验结果
 
