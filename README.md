@@ -345,6 +345,17 @@ package。决策 JSONL 每行只包含 `case_id`、`review_status`、`human_asse
 {"case_id":"ps2-p2_img43_3396","review_status":"confirmed","human_assessment":null,"review_note":"人工确认候选结果"}
 ```
 
+如需先生成包含全部 80 个 case 的待编辑模板，可执行：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\apply_review_decisions.py `
+  --package reports\label-review-20260829\ps80_codex_review_package_v1.jsonl `
+  --template-output reports\label-review-20260829\review_decisions_template.jsonl
+```
+
+模板中的 `review_status` 初始为 `candidate`，必须人工改为 `confirmed` 或 `corrected`
+后才能作为 `--decisions` 输入；生成模板不会改变原 package。
+
 决策文件可以只包含当前已复核的 case，未出现的 case 会保持 `candidate`：
 
 ```powershell

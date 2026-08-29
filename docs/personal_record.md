@@ -1228,4 +1228,5 @@ micro-F1 都为 0，不能据此判断模型已学会六类风险事件。相较
 `human_assessment` 和 `review_note` 的决策 JSONL，支持只更新当前批次并保留其余
 `candidate` 记录；`confirmed` 且 assessment 为 `null` 时显式复制候选 assessment，
 `corrected` 则要求提供不同的结构化 assessment 和非空 review note。`--require-complete`
-用于人工终审结束后的全量门禁。本轮新增 3 个工作流测试，无硬件测试累计 73 个通过。
+用于人工终审结束后的全量门禁；同一入口也能生成初始状态为 `candidate` 的 80 条决策
+模板。本轮新增 4 个工作流测试，无硬件测试累计 74 个通过。

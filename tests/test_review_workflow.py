@@ -9,7 +9,7 @@ from pathlib import Path
 
 from scripts.build_label_review_sheets import _resolve_image
 from scripts.build_review_package import build_review_package
-from scripts.apply_review_decisions import apply_review_decisions
+from scripts.apply_review_decisions import apply_review_decisions, create_decision_template
 from scripts.finalize_review_package import finalize_review_package
 from scripts.inspect_review_package import inspect_review_package
 
@@ -409,6 +409,47 @@ class ReviewWorkflowTests(unittest.TestCase):
                     decisions_path=decisions,
                     output_path=root / "updated.jsonl",
                 )
+
+    def test_create_decision_template_is_not_ready_for_apply(self) -> None:
+        assessment = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["未见近距离风险目标。"],
+            "driver_advice": ["maintain_observation"],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            package = root / "package.jsonl"
+            template = root / "decisions-template.jsonl"
+            package.write_text(
+                json.dumps(
+                    {
+                        "case_id": "sample-1",
+                        "image_ref": "raw/sample.jpg",
+                        "source_group_id": "group-1",
+                        "split": "train",
+                        "label_source": "codex_visual_review_v1_single_pass",
+                        "review_status": "candidate",
+                        "candidate_assessment": assessment,
+                        "human_assessment": None,
+                        "review_note": "",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            summary = create_decision_template(
+                package_path=package,
+                output_path=template,
+            )
+            record = json.loads(template.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(summary["sample_count"], 1)
+        self.assertFalse(summary["ready_for_apply"])
+        self.assertEqual(record["review_status"], "candidate")
+        self.assertIsNone(record["human_assessment"])
 
 
 if __name__ == "__main__":

@@ -1622,5 +1622,7 @@ JSONL，按 `case_id` 更新 package，未出现在决策文件中的记录保�
 case、非法 assessment 或不支持的状态都会在写出前失败。`--require-complete` 会要求
 所有 package 记录已经 finalized，适合作为进入 `finalize_review_package.py` 前的门禁。
 
-该工具通过 3 个新增工作流测试，项目无硬件测试累计 `73/73` 通过；它只管理人工复核
-状态，不修改候选 annotation，也不绕过 `human_confirmed_v1` provenance gate。
+该工具还提供决策模板生成模式：模板包含全部 case_id，状态初始化为 `candidate`，必须
+人工编辑为 `confirmed` 或 `corrected` 后才能应用。该工具通过 4 个新增工作流测试，
+项目无硬件测试累计 `74/74` 通过；它只管理人工复核状态，不修改候选 annotation，也不
+绕过 `human_confirmed_v1` provenance gate。

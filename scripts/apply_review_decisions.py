@@ -154,17 +154,76 @@ def apply_review_decisions(
     }
 
 
+def create_decision_template(*, package_path: Path, output_path: Path) -> dict[str, Any]:
+    """Create an editable, intentionally non-final decision JSONL template."""
+    package = _load_jsonl(package_path)
+    case_ids: set[str] = set()
+    template: list[dict[str, Any]] = []
+    for record in package:
+        if set(record) != PACKAGE_FIELDS:
+            raise ValueError("review package has invalid fields")
+        case_id = record.get("case_id")
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError("review package case_id must be a non-blank string")
+        if case_id in case_ids:
+            raise ValueError(f"review package has duplicate case_id: {case_id}")
+        case_ids.add(case_id)
+        ParkingAssessment.from_mapping(record["candidate_assessment"])
+        template.append(
+            {
+                "case_id": case_id,
+                "review_status": "candidate",
+                "human_assessment": None,
+                "review_note": "",
+            }
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in template:
+            handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+            handle.write("\n")
+    return {
+        "package_path": str(package_path),
+        "output_path": str(output_path),
+        "sample_count": len(template),
+        "review_status": "candidate",
+        "ready_for_apply": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", required=True, type=Path)
-    parser.add_argument("--decisions", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--decisions", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--template-output",
+        type=Path,
+        help="create a candidate template instead of applying decisions",
+    )
     parser.add_argument(
         "--require-complete",
         action="store_true",
         help="require every package record to be finalized before writing",
     )
     args = parser.parse_args()
+    if (args.decisions is None) == (args.template_output is None):
+        parser.error("必须且只能提供 --decisions 或 --template-output")
+    if args.template_output is not None:
+        print(
+            json.dumps(
+                create_decision_template(
+                    package_path=args.package,
+                    output_path=args.template_output,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if args.output is None:
+        parser.error("使用 --decisions 时必须提供 --output")
     print(
         json.dumps(
             apply_review_decisions(

@@ -17,7 +17,8 @@
   `d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
 - 新增 `scripts/apply_review_decisions.py`，支持按批次应用人工 `confirmed`/`corrected`
   决策，保留未复核记录，并在 `--require-complete` 下强制 80 条全部定稿；73 个无硬件
-  测试通过。该工具不改变候选 annotation，也不绕过最终 provenance gate。
+  测试通过。工具还支持生成全部 case 的待编辑决策模板；该模板不改变候选 annotation，
+  也不绕过最终 provenance gate。
 
 ## 2026-08-30 严格 JSON workload A/B checkpoint
 
