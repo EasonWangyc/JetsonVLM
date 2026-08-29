@@ -1078,5 +1078,5 @@ GPU runtime。已在 Jetson 现有 `qwen3_vl_2b_fp16_i768_k1024` engine、
 
 同一入口现支持 LLM 与 visual engine 分目录传入，解决 LoRA/INT4 仅生成 LLM engine、
 而视觉 engine 复用 FP16 版本时无法直接启动的问题。该模式已由无硬件测试覆盖；在
-Jetson 上的下一步是用 `--check-only` 核对 INT4/LoRA LLM 目录加 FP16 visual 目录，
-再在 headless 条件下进行真实加载。
+Jetson 上已核对 FP16、LoRA FP16、普通 INT4、领域 INT4 四种组合的 LLM/visual 目录，
+四种预检均返回 `ready=true`；下一步仍需在 headless 条件下进行真实加载。
