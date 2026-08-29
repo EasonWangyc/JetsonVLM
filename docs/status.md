@@ -1,9 +1,25 @@
 # 当前实现状态
 
+## 2026-08-30 严格 JSON workload A/B checkpoint
+
+- 新增 `configs/workloads/parking_risk_v2_strict_json.json` 和对应的
+  `jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json` study。v2 保留
+  `parking_risk_v1` schema、输入尺寸、生成参数和枚举集合，仅强化原始 JSON 输出边界，
+  identity 为 `parking_risk_v2_strict_json@sha256:c4695a1bfa4d547f5ad90ec7697b82419dad12995829776e96c850707e15d1f4`。
+- 在 Jetson 领域 INT4 engine、固定 `001.jpg` 和相同运行时参数下，v1 请求因 Markdown
+  `json` 代码围栏记录为 `json_parse_error`；v2 返回 HTTP 200，严格 JSON 解析成功，
+  `failure=null`，端到端约 `8218 ms`、59 tokens。
+- 第一次 v2 请求曾因提示词达到 823 token、超过 `i768` engine 的 768 token 输入上限而
+  返回 HTTP 500；压缩重复约束后重新验证通过。该事实纳入 workload 设计约束，后续完整
+  study 需要同时报告输入 token 预算和格式有效率。
+- 本次服务已停止；日志归档于
+  `reports/jetson-int4-strict-json-smoke-20260830.log`，SHA-256 为
+  `6850bee6589a026cd4e2a24cb6d7e8e5e090341bcf0ee94ac4619cfd577af5a1`。
+
 ## 2026-08-29 现场复核 checkpoint
 
 - 本地仓库已提交 Codex-assisted review workflow、训练 provenance 防误用和部署预检改动；
-  当前 `main` 比 `origin/main` 超前 7 个本地提交，未执行 push。
+  当前 `main` 比 `origin/main` 超前 9 个本地提交，未执行 push。
 - 无硬件测试为 `61/61` 通过；80 条 Codex 候选 package 可由
   `build_review_package.py` 重新生成，当前候选分布为 `low=47`、`medium=32`、
   `high=1`。

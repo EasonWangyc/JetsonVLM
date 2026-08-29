@@ -34,6 +34,22 @@ class FrozenWorkloadTests(unittest.TestCase):
         for advice in DriverAdvice:
             self.assertIn(f'"{advice.value}"', rendered_prompt)
 
+    def test_strict_json_v2_workload_adds_raw_object_boundary(self) -> None:
+        workload = FrozenWorkload.load(
+            Path(__file__).resolve().parents[1]
+            / "configs"
+            / "workloads"
+            / "parking_risk_v2_strict_json.json"
+        )
+        rendered_prompt = workload.render_user_prompt()
+        self.assertEqual(workload.schema_version, "parking_risk_v1")
+        self.assertNotEqual(
+            workload.identity,
+            FrozenWorkload.load(WORKLOAD_PATH).identity,
+        )
+        self.assertIn("第一字符为 {", rendered_prompt)
+        self.assertIn("禁止使用 ```json", rendered_prompt)
+
     def test_loads_frozen_workload_and_builds_stable_identity(self) -> None:
         workload = FrozenWorkload.load(WORKLOAD_PATH)
 

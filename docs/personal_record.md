@@ -1103,3 +1103,26 @@ output tokens。模型输出风险等级为 `low`、事件为 `vehicle_near_mane
 `9ee94b7b331368c7e7204288938eadd1bdd3f81e05e0c97209210bd7d77534b5`。临时服务已停止，
 没有修改系统服务或远端仓库。后续应优先修正/重新验证严格 JSON 生成，再运行完整
 `ps20_pilot` Study；FP16 图形桌面下的连续内存 OOM 仍独立存在。
+
+### 2.14 2026-08-30：严格 JSON workload 修正与 Jetson A/B
+
+为处理领域 INT4 的 Markdown JSON 代码围栏问题，新增
+`configs/workloads/parking_risk_v2_strict_json.json`。该 workload 保留
+`parking_risk_v1` schema、448x448 输入、生成参数和风险枚举，仅强化“只输出原始 JSON
+对象”的边界约束，并通过缩短重复用户提示词控制 `i768` engine 的输入 token 预算。
+其稳定 identity 为
+`parking_risk_v2_strict_json@sha256:c4695a1bfa4d547f5ad90ec7697b82419dad12995829776e96c850707e15d1f4`。
+
+在 Jetson 领域 INT4 LLM engine、复用 FP16 visual engine、固定 `001.jpg` 和同一
+runtime 参数下完成 A/B：v1 的 91-token 响应含 Markdown 代码围栏，记录为
+`json_parse_error`；v2 返回 59 tokens，成功解析为 `ParkingAssessment`，风险等级为
+`low`、事件为空、驾驶建议为 `maintain_observation`，端到端约 8.22 秒，
+`failure=null`。第一次使用较长 v2 提示词时，服务明确报告输入 823 token 超出 engine
+支持的 768 token；压缩后请求通过，说明格式约束和输入预算需要共同设计。
+
+本次只验证 1 张图片，不能替代 `ps20_pilot_v1` 的正式质量评测。新 study 配置为
+`configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json`，原始日志
+为 `reports/jetson-int4-strict-json-smoke-20260830.log`，SHA-256 为
+`6850bee6589a026cd4e2a24cb6d7e8e5e090341bcf0ee94ac4619cfd577af5a1`。下一步是在完整
+冻结集上比较 v1/v2 的 JSON 有效率、风险准确率、事件 micro-F1、输出 token 数和端到端
+分位数，再决定是否将 v2 设为后续 Jetson study 的 workload。
