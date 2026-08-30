@@ -230,7 +230,7 @@ ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 `parking_space_conflict`（车位冲突）。
 
 5 个驾驶建议枚举：`maintain_observation`（保持观察）/ `slow_down`（减速）/ `yield`（让行）/
-`prepare_to_stop`（准备停车）/ `change_maneuver_when_safe`（安全时改变操作）。
+`prepare_to_stop`（随时准备停车，注意，不是泊车）/ `change_maneuver_when_safe`（安全时改变操作）。
 
 #### 数据文件 JSON 格式
 
@@ -707,25 +707,32 @@ precision         fp16
 
 Jetson Orin + JetPack 6.2 支持 **FP16 / INT8 / INT4**，不支持 FP8/NVFP4。
 
-#### 量化方法
+#### AWQ 量化的具体方法
 
-使用W4A16的AWQ量化方法，配置如下：
+本轮量化使用 TensorRT Edge-LLM v0.9.1 的量化接口和 ModelOpt 0.44.0，配置为：
 
 ```json
 {
-  "quant_algo": "W4A16_AWQ",   // 权重 W=INT4，激活 A=FP16
-  "group_size": 128,           // 每 128 个权重共享一组 scale/zero-point
-  "zero_point": false,         // 对称量化
+  "quant_algo": "W4A16_AWQ",
+  "group_size": 128,
+  "zero_point": false,
   "pre_quant_scale": true,
-  "KV cache quant": "none",
-  "excluded": ["lm_head", "model.visual*"]  // ← 不量化这些
+  "quantized_scope": "LLM backbone",
+  "visual_precision": "FP16",
+  "lm_head_precision": "FP16",
+  "kv_cache_quantization": null
 }
 ```
 
-Qwen3-VL 里**只量化 `text_config` 对应的 LLM 骨干**（28 层 Transformer），具体是：
+量化边界不是整个 Qwen3-VL：
 
-- 每层的 `q_proj / k_proj / v_proj / o_proj`（attention 投影）
-- 每层的 `gate_proj / up_proj / down_proj`（FFN 投影）
+- 量化 LLM backbone 中 28 层 Transformer 的 attention 投影 `q_proj/k_proj/v_proj/o_proj`；
+- 量化 FFN 的 `gate_proj/up_proj/down_proj`；
+- visual encoder 保持 FP16；
+- `lm_head` 保持 FP16；
+- KV cache 不量化；
+- `W4A16` 表示权重使用 INT4，激活仍使用 FP16；
+- `group_size=128` 表示每 128 个权重共享量化 scale，`zero_point=false` 表示对称量化。
 
 AWQ共分为两步：
 
@@ -868,479 +875,84 @@ A/B的低维度均为16。
 
 Qwen3-VL-2B 的 `hidden_size=2048`，但注意 **GQA**：`num_attention_heads=16`、`num_key_value_heads=8`、`head_dim=128`：
 
-```
+```text
 q_proj: 2048 → 2048   (16 头)    参数 = 16×(2048+2048) = 65,536
 k_proj: 2048 → 1024   (8 KV 头)  参数 = 16×(2048+1024) = 49,152
 v_proj: 2048 → 1024   (8 KV 头)  参数 = 16×(2048+1024) = 49,152
 o_proj: 2048 → 2048   (16 头)    参数 = 16×(2048+2048) = 65,536
-─────────────────────────────────────────────
+────────────────────────────────────────────────────────────────
 每层小计                                229,376
 ```
 
 共28层decoder layer，总参数为：`229376 * 28 = 6,422,528`，约占总参数量的`6,422,528 / 2,133,954,560 = 0.3010%`。
 
-### 2.6 2026-08-17：候选标注、数据拆分与 Transformers profiling
+### 2.6 人工标注数据集并重新LoRA、量化
 
-前面的 LoRA 记录基于弱监督标签和 64/16 的训练验证拆分。后续实验发现，80 条teacher 标签的 `risk_level` 全部为 `low`，其中 65 条包含 `narrow_passage`，该标签分布会诱发模型的类别偏置。因此新增了一轮候选视觉复核，并将数据状态与早期弱监督
-实验区分记录。
+#### 人工标注与数据拆分
 
-候选复核的主要结果：
+前一阶段的 80 条开发样本先由 Codex 生成候选 assessment，再通过离线复核页面逐图人工确认或修正风险等级、风险事件、evidence 和 driver advice。最终 annotation 来源标记为`human_confirmed_v1`，不是候选的 `codex_visual_review_v1_single_pass`。
 
-- 复核对象为 PS2.0 `training` 中 80 个独立来源组，每个来源组选择一张图片。
-- 相对 teacher 标签，33 条风险等级和 77 条事件集合发生变化。
-- 当前拆分为 48 条 LoRA train、16 条 validation、16 条独立 INT4 calibration。
-- 三个开发 split 与冻结的 20 张 pilot 测试集均没有 `source_group_id` 交集。
-- 当前标注来源为 `codex_visual_review_v1_single_pass`，属于候选标注，不是人工双人金标。
-
-同时完成了 Jetson Transformers FP16 的独立 profiling。未插桩基线在 20 个测试样本上
-全部完成，严格 JSON 有效率为 100%，端到端 p50/p90/p99 为 `9.38/14.12/27.94 s`，
-风险等级准确率为 `35%`，事件 micro-F1 为 `0.341`。阶段插桩结果如下：
-
-| 阶段 | p50 |
-|---|---:|
-| 图像预处理 | `27.60 ms` |
-| 视觉编码 | `225.11 ms` |
-| LLM prefill | `626.51 ms` |
-| LLM decode | `17.04 s` |
-
-profiling 在 hook 边界执行 CUDA 同步，因此插桩绝对时延不用于计算 runtime 加速比。
-结果显示 decode 是主要耗时阶段，预处理不是当前优化重点。
-
-### 2.7 2026-08-17：复核数据 LoRA 重训
-
-服务器训练环境为 RTX 4090 D，使用 PyTorch `2.8.0+cu128`、Transformers `5.9.0`、
-PEFT `0.18.0` 和 Accelerate `1.10.1`。基础模型仍固定为：
+人工确认后的文件为：
 
 ```text
-Qwen/Qwen3-VL-2B-Instruct
-revision: 89644892e4d85e24eaac8bacfd4f463576704203
+data/annotations/ps80_human_confirmed_v1.jsonl
 ```
 
-为了缓解 teacher 标签全部为 `low` 的偏置，训练脚本增加了
-`non_low_oversampling_factor`，仅对 train split 中非 `low` 样本进行复制，不修改
-validation、calibration 或 test 数据。本轮 factor 为 2，48 个唯一训练样本扩展为 63
-条有效训练记录。
-
-三轮训练对照如下：
-
-| 训练版本 | 唯一/有效 train | epoch / step | validation loss | 训练耗时 | 峰值 CUDA |
-|---|---:|---:|---:|---:|---:|
-| e1 | 48/48 | 1 / 12 | 1.2645 | 21.65 s | 5.249 GiB |
-| e3 未平衡 | 48/48 | 3 / 36 | 0.8501 | 57.26 s | 5.273 GiB |
-| e3、non-low x2 | 48/63 | 3 / 48 | 0.7220 | 80.84 s | 5.273 GiB |
-
-冻结 20 样本的服务器结果：
-
-| 模型状态 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 现象 |
-|---|---:|---:|---:|---|
-| e1 adapter | 45% | 10% | 0 | 11 条输出在 256 token 处截断 |
-| e3 未平衡 adapter | 100% | 35% | 0 | 20 条均预测为 `low` |
-| e3、non-low x2 adapter | 100% | 50% | 0.182 | 恢复少量事件预测 |
-| e3、non-low x2 merged | 100% | 45% | 0.100 | 与在线 adapter 结果不一致 |
-
-本轮说明 validation loss 下降不能替代冻结测试集质量评测。过采样缓解了全 `low`
-塌缩，但事件 F1 仍低于早期弱监督 LoRA 的 `0.389`。adapter 与 merged 的差异还需要
-通过逐样本生成结果、权重合并过程和推理配置继续定位。
-
-### 2.8 2026-08-17：领域 INT4 AWQ 重新量化与 Jetson 复测
-
-量化环境使用 TensorRT Edge-LLM `v0.9.1` 对应工具链、ModelOpt `0.44.0`、
-PyTorch `2.12.0+cu130`、Transformers `5.9.0` 和 datasets `4.8.5`。量化边界固定为：
-
-- LLM backbone：W4A16 AWQ，group size 128；
-- visual：FP16；
-- `lm_head`：FP16；
-- KV cache：不量化。
-
-本轮使用 16 条无来源组泄漏的泊车领域文本作为 calibration，数据 SHA-256 为：
+80 条样本的风险等级分布为：`low=45`、`medium=32`、`high=3`。原始开发 manifest按来源组隔离为 64 条 train 和 16 条 validation；随后从原 train 来源组中另选 16 条作为独立 INT4 calibration。因此，实际监督训练数据和校准数据的关系为：
 
 ```text
-0949bfb7649f74a0a537781e5e46363d9b76cb3b046ecf4b91b6cd02171f77f3
+80 条人工确认开发数据
+├── 48 条 LoRA train
+├── 16 条 LoRA validation
+└── 16 条 INT4 calibration
 ```
 
-量化权重、ONNX 和 Jetson engine 均生成成功。Jetson 使用的 TensorRT Edge-LLM
-固定 commit 为 `7f061f21f0a581ba234a1e233c9315b89d8e47d6`，新 LLM engine SHA-256 为：
+在人工确认数据的 16 条 validation 上，随后对 LoRA 模型、workload 和 calibration做了组合对照：
+
+| 版本 | LoRA / calibration 组合 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | Jetson p50 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 服务器 reviewed LoRA v2 | semantic v2 LoRA，未量化 | 100% | 56.25% | 0.4286 | 0% | 5.26 s |
+| v1 INT4 | reviewed v1 LoRA + v1 calibration | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
+| v2 INT4 | semantic v2 LoRA + v1 calibration | 87.50% | 56.25% | 0.1429 | 18.75% | 7.32 s |
+| v3 INT4 | semantic v2 LoRA + semantic v2 calibration | 100% | 68.75% | 0.1667 | 0% | 8.60 s |
+| v5 INT4 | reviewed v1 LoRA + semantic v2 calibration | 100% | 62.50% | 0.2857 | 18.75% | 7.64 s |
+
+严格 JSON 和风险等级在部分版本中改善，但事件 micro-F1 没有稳定提升；当前没有一个 INT4 版本同时在事件识别、格式、安全建议和时延上全面优于基线。
+
+#### 扩大 validation 后的重训回归
+
+为了检验 16 条 validation 是否导致指标波动，将人工确认 LoRA 数据重划分为 32 train和 32 validation，保留原 16 条 calibration 不变。新训练仍使用 3 epoch、non-low x2，在本机 RTX 4060 上完成：
 
 ```text
-589d8ba247a93cdf794c86697bb5a5d5fe3387fee812744c51d09806912b3026
+unique train: 32
+effective train after oversampling: 43
+optimizer steps: 33
+validation loss: 0.817634
+training time: about 164.65 s
+peak CUDA memory: about 5.32 GiB
 ```
 
-冻结 20 样本的板端结果：
+服务器 Transformers 在 32 条 validation 上的结果为：
 
-| 指标 | 新领域 INT4 |
-|---|---:|
-| 后端完成 | 20/20 |
-| 严格 JSON 有效率 | 4/20（20%） |
-| 风险等级准确率 | 15% |
-| 事件 micro-F1 | 0 |
-| 端到端 p50 | 10.68 s |
-| 聚合输出速率 | 7.32 token/s |
-| RAM 峰值 | 5354 MB |
-| GPU 利用率均值 | 81.88% |
-| 输入功耗均值 | 9.26 W |
-| GPU 峰值温度 | 62.97 °C |
+| 样本数 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 100% | 65.63% | 0.1905 | 18.75% | 4.41 s |
 
-20 条请求均获得后端响应，但其中 16 条输出被 Markdown `json` 代码围栏包裹，
-不满足项目规定的严格 JSON 协议。评测器保留严格失败，不自动剥离代码围栏，以避免
-掩盖量化后的格式遵循退化。
+该版本输出明显收缩为 `low + no_event`，因此只作为 validation 扩展和工程回归证据，没有继续进入新的量化流程。
 
-与旧的 128 条通用新闻文本校准 INT4 相比，新领域校准版本的性能基本相同，未带来
-可确认的质量或性能收益。该实验被记录为“量化部署成功、质量验收失败”的负向结果，
-不替换旧 INT4 作为当前性能对照。
+#### 阶段结论
 
-### 2.9 当前状态与后续工作
-
-截至 2026-08-17，项目已经完成以下端到端链路：
+本轮完成的事实链路为：
 
 ```text
-固定模型 revision
-  -> LoRA 训练 / 合并
-  -> TensorRT Edge-LLM ONNX 导出
-  -> Jetson engine 构建
-  -> Edge-LLM HTTP 服务
-  -> ParkSight Adapter
-  -> StudyReport 与 tegrastats 证据
+80 条候选数据人工确认
+  -> human_confirmed_v1 annotation
+  -> 48/16 LoRA train/validation
+  -> LoRA 微调与 merged 模型
+  -> 16 条独立 calibration
+  -> W4A16 AWQ 量化
+  -> ONNX 导出
+  -> Jetson engine 构建与 Edge-LLM study
 ```
 
-当前主要限制如下：
-
-1. 20 张冻结测试集适合流程验收，样本规模不足以支撑稳定的领域质量结论。
-2. 80 条复核标注仍是单轮候选标注，需要人工终审并补充更多六类风险事件。
-3. 新 reviewed LoRA 的事件 micro-F1 低于旧弱监督 LoRA，不能描述为整体质量提升。
-4. 新领域 INT4 的严格 JSON 有效率降至 20%，格式问题和任务质量问题仍未解决。
-5. Jetson 8 GB 统一内存余量很小，FP16 engine 运行可能需要 headless、内存 compaction
-   和临时 swap。
-
-下一阶段应先完成候选数据人工终审与扩充，再在服务器上统一复验 Base、LoRA adapter
-和 merged 模型；质量结果稳定后，再使用更大、更有代表性的泊车领域 calibration
-重新执行 INT4，并将通过质量验收的版本部署到 Jetson。
-
-详细命令、原始报告和证据索引见 `docs/record.md`、`docs/status.md` 和
-`docs/progress.md`。
-
-### 2.10 2026-08-29：复核 provenance、数据拆分与 Jetson 启动诊断
-
-本轮将 80 条 Codex 单轮视觉复核候选标注重新固化为
-`reports/label-review-20260829/ps80_codex_review_package_v1.jsonl`，并使用当前入口
-完成候选数据生成验证。结果为 64 条 LoRA 数据（48 train、16 validation）和 16 条
-INT4 calibration；LoRA 与 calibration 来源组交集为 0，开发数据与冻结测试集来源组
-交集为 0。工作负载 identity 以及四份输入文件的 SHA-256 写入了
-`ps80_candidate_dataset_summary.json`。
-
-复核定稿入口新增以下约束：
-
-- 候选和人工 `ParkingAssessment` 均必须通过严格 schema；
-- `confirmed` 必须与候选完全一致，`corrected` 必须发生实际变化且填写 `review_note`；
-- 定稿摘要输出风险等级准确率、事件 micro-precision/recall/F1、整体 assessment、
-  风险等级、事件集合、证据和驾驶建议的修正统计；
-- `prepare_reviewed_lora_dataset.py` 要求 CLI 显式提供 `--label-source`，避免人工金标
-  被错误标记为 Codex 候选。
-
-本轮无硬件测试增至 58 个并全部通过。Edge-LLM 服务入口新增
-`--edge-llm-root` 和 `--plugin-path`，自动加入源码/pybind 路径并发现插件。
-
-Jetson `192.168.137.187` 只读诊断结果：工作树为旧提交 `f362a43`，有 33 项未提交或
-未跟踪改动，未执行覆盖或清理。临时补充 venv CUDA 库路径后，PyTorch `2.9.1`、CUDA
-`12.6` 和 Transformers `4.57.6` 可导入。服务启动依次暴露了源码路径缺失、插件路径
-缺失和图形桌面状态下 visual engine 申请约 `811 MiB` 连续内存失败三个问题；服务当前
-未运行。尝试用 `ubuntu` 账号切换 headless 时因 sudo 需要密码被拒绝，root SSH 也未配置，
-因此未继续修改系统状态。
-
-当前下一步仍是人工终审 80 条候选标注；终审完成后使用 `human_confirmed_v1` 生成训练
-和校准数据，再申请 Jetson headless/sudo 条件完成新的板端 smoke。
-
-### 2.11 2026-08-29：正式训练的标注来源闸门
-
-审计训练入口后发现，`configs/training/qwen3_vl_2b_lora_ps64_reviewed_v1.json` 原本只
-固定了数据路径，没有在训练启动前检查记录的标注来源。该配置现在显式声明
-`label_source=human_confirmed_v1`，并将 `allow_candidate_labels` 固定为 `false`。
-`scripts/finetune_qwen3_vl_lora.py` 会检查配置来源、数据集是否单一来源且完全匹配，
-并默认拒绝 `codex_visual_review_v1_single_pass`。因此当前 64 条候选训练数据会安全地
-在训练前失败，而不会生成新的 LoRA adapter；这一步把“Codex 候选可用于开发验证”和
-“人工终审后才可用于正式训练”明确分开。
-
-本轮无硬件测试为 `61/61` 通过，包含来源匹配、混合来源拒绝、候选来源拦截和人工来源
-接受四类训练入口测试。下一步是完成 80 条人工终审，将生成的数据路径和来源替换到
-训练配置，再执行服务器 Base/LoRA/merged 对照评测。
-
-同时增加 `scripts/inspect_review_package.py`，用于在人工复核过程中只读查看状态计数、
-待处理 case_id、候选标签分布和最终化就绪状态；`--fail-on-incomplete` 可作为定稿前的
-显式门禁，不会修改候选 package。
-
-为支持先行验证开发链路，新增 `qwen3_vl_2b_lora_ps64_codex_candidate_v1` 训练配置和
-服务器冻结集 study 配置，并将候选 LoRA 数据固定命名为
-`data/processed/lora/ps64_codex_candidate_v1.jsonl`。候选训练必须使用独立产物目录和
-`codex_candidate` 标识；该路径可以验证训练与 adapter 推理流程，但结果不进入正式质量
-结论。
-
-### 2.12 2026-08-30：Edge-LLM 静态部署预检
-
-为减少 Jetson 启动失败的定位成本，`scripts/serve_edgellm.py` 新增 `--check-only`。
-该模式只检查 LLM/visual engine、Edge-LLM checkout、pybind 和 plugin 路径，不导入或加载
-GPU runtime。已在 Jetson 现有 `qwen3_vl_2b_fp16_i768_k1024` engine、
-`/home/ubuntu/TensorRT-Edge-LLM/build/pybind` 和
-`libNvInfer_edgellm_plugin.so` 上完成静态路径核对；实际服务仍因图形桌面统一内存条件
-未重新启动；随后新增的真实 INT4 smoke 结果见 2.13。
-
-同一入口现支持 LLM 与 visual engine 分目录传入，解决 LoRA/INT4 仅生成 LLM engine、
-而视觉 engine 复用 FP16 版本时无法直接启动的问题。该模式已由无硬件测试覆盖；在
-Jetson 上已核对 FP16、LoRA FP16、普通 INT4、领域 INT4 四种组合的 LLM/visual 目录，
-四种预检均返回 `ready=true`；下一步仍需在 headless 条件下进行真实加载。
-
-### 2.13 2026-08-30：领域 INT4 真实 HTTP smoke
-
-在 Jetson 图形桌面保持运行的条件下，使用领域 INT4 LLM engine
-`qwen3_vl_2b_int4_awq_ps16_v1_i768_k1024/llm`，复用 FP16 visual engine，显式传入
-venv `site-packages`、Edge-LLM root、pybind 和 plugin 路径，并省略未启用的 weight
-streaming 参数。实际加载日志确认 LLM engine、tokenizer、visual runner 和 CUDA graph
-均初始化成功，Uvicorn 监听 `127.0.0.1:8000`，`/health` 返回 HTTP 200。
-
-随后通过项目 `analyze_image` 入口发送 1 张 `ps2.0` 图片，请求返回 HTTP 200 和 91
-output tokens。模型输出风险等级为 `low`、事件为 `vehicle_near_maneuver_path`，但原始
-内容被 ```json 代码围栏包裹，严格 `ParkingAssessment` 解析因此记录为
-`json_parse_error`。这证明领域 INT4 的部署和推理链路已经实际打通，同时保留了格式
-遵循失败事实，没有把该请求写成业务成功。
-
-原始日志已归档至 `reports/jetson-int4-smoke-20260830.log`，SHA-256 为
-`9ee94b7b331368c7e7204288938eadd1bdd3f81e05e0c97209210bd7d77534b5`。临时服务已停止，
-没有修改系统服务或远端仓库。后续应优先修正/重新验证严格 JSON 生成，再运行完整
-`ps20_pilot` Study；FP16 图形桌面下的连续内存 OOM 仍独立存在。
-
-### 2.14 2026-08-30：严格 JSON workload 修正与 Jetson A/B
-
-为处理领域 INT4 的 Markdown JSON 代码围栏问题，新增
-`configs/workloads/parking_risk_v2_strict_json.json`。该 workload 保留
-`parking_risk_v1` schema、448x448 输入、生成参数和风险枚举，仅强化“只输出原始 JSON
-对象”的边界约束，并通过缩短重复用户提示词控制 `i768` engine 的输入 token 预算。
-其稳定 identity 为
-`parking_risk_v2_strict_json@sha256:c4695a1bfa4d547f5ad90ec7697b82419dad12995829776e96c850707e15d1f4`。
-
-在 Jetson 领域 INT4 LLM engine、复用 FP16 visual engine、冻结 `ps20_pilot_v1` 和同一
-runtime 参数下完成完整 A/B。v1 运行结果为 20/20 后端完成、严格 JSON 有效率 20%、风险
-等级准确率 15%、事件 micro-F1 0、端到端 p50 10.62 秒；v2 运行结果为 20/20、95%、35%、
-0、p50 7.43 秒。v1 有 16 条 `json_parse_error`，v2 只有 1 条；v2 的平均输出长度也从
-80.8 tokens 降至 57.8 tokens。v2 的格式有效率提升在完整冻结集上成立，但事件识别质量
-没有改善，不能把该 workload 修正描述为领域能力提升。
-
-第一次使用较长 v2 提示词时，服务明确报告输入 823 token 超出 engine 支持的 768 token；
-压缩后请求通过，说明格式约束和输入预算需要共同设计。两次完整 study 均为单次重复，且
-v2 先运行、v1 后运行，端到端 p50 仅作本轮描述性证据。
-
-随后将 token 预算检查固化到 `scripts/inspect_prompt_contract.py`。使用 Jetson 实际
-Qwen3-VL processor、同一图片和 engine chat template，v1/v2 输入 token 数为 `735/700`；
-以 `--max-input-tokens 768` 运行时两者均通过门禁，且 `message_contract.messages_equal`
-均为 `true`。报告分别为
-`reports/prompt-contract/qwen3_vl_v1_i768_budget_20260830.json`（SHA-256
-`d7d11b4192f97d9d8035bfc53d911299a673c0c8087af996e8a2547fe5ffc0cf`）和
-`reports/prompt-contract/qwen3_vl_v2_i768_budget_20260830.json`（SHA-256
-`247f66553562cb5d7de3aae4e85ba07bd19ade626c002540ddacc26fa967a663`）。
-
-新 study 配置为
-`configs/studies/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json.json`，原始日志
-为 `reports/jetson-int4-ps20-strict-json-20260830.log`；StudyReport 为
-`reports/jetson_edgellm_int4_awq_ps16_v1_ps20_pilot_strict_json_i768_k1024.json`，SHA-256
-为 `9f75374756305d820baf8efd635a5ef709dc867a453e2632f426c78d897c1cc0`。下一步应在人工
-确认数据完成后重新训练/量化，并继续用完整冻结集比较 JSON 有效率、风险准确率、事件
-micro-F1、输出 token 数和端到端分位数。
-
-### 2.15 2026-08-30：80 条 Codex 候选样本开发评测
-
-为验证候选数据能否跑通完整识别流程，在同一 Jetson INT4 engine、同一 v2 严格 JSON
-workload 和同一运行时参数下，分别评测 `ps80_development_v1` 的 64 条 train 与 16 条
-validation。参考 annotation 是 Codex 候选结果，不是人工终审金标，因此该实验仅用于
-流程验证和错误分析。
-
-合并 80 条结果后，后端完成率为 `80/80`，严格 JSON 有效率为 `77/80=96.25%`，候选
-标签上的风险等级准确率为 `47/80=58.75%`，事件 micro-F1 为 `0`，不安全建议率为
-`23/80=28.75%`，3 条失败均为 `json_parse_error`，且均位于 train 分片。train 分片
-自身为严格 JSON `95.31%`、风险准确率 `57.81%`；validation 分片为 `100%` 和 `62.50%`。
-结果表明当前链路可以稳定处理 80 条输入，但模型对风险事件的输出仍未达到可用水平。
-
-新增可复现配置为
-`configs/studies/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json.json`
-和 validation 版本。报告分别为
-`reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_train_strict_json_i768_k1024.json`
-（SHA-256 `21a3ef7dd7f0a4d76f0846a03448cca6c296b2458c0a1ec065b70a5958d10671`）和
-`reports/jetson_edgellm_int4_awq_ps16_ps80_codex_candidate_validation_strict_json_i768_k1024.json`
-（SHA-256 `8edf7cd695cfffd919d521653bd7877421d470396705a12e089e76fb11ebb4dd`）。
-
-### 2.16 2026-08-30：候选 LoRA 训练、合并与服务器对照
-
-在本地 RTX 4060 上创建独立 `.venv-train`，安装 PyTorch `2.8.0+cu128`、Transformers
-`5.9.0`、PEFT `0.18.0` 和 Accelerate `1.10.1`。从 Jetson 缓存复制的 Qwen3-VL
-权重大小为 `4,255,140,312` 字节，SHA-256 为
-`7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0`，与板端缓存一致。
-processor 和 BF16 模型加载成功，CUDA 可用且 BF16 支持。
-
-使用 `configs/training/qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 完成候选训练：
-48 个唯一训练样本，non-low 过采样后 63 条，3 epochs、48 个 optimizer steps，validation
-loss 为 `0.723180890083313`，峰值 CUDA 显存 `5.272403240203857 GiB`，耗时
-`145.891 s`。adapter 输出位于被忽略的 `artifacts/` 目录。
-
-在固定 `ps20_pilot_v1`、`parking_risk_v1` 和同一 model revision 上，base 对照为风险
-准确率 `35%`、事件 micro-F1 `0.350`；candidate adapter 为 `50%`、`0.1818`，两者
-严格 JSON 均为 `100%`。candidate 提高了风险等级命中，但事件错误增加，不能作为正式
-模型改进。随后使用
-`configs/flows/merge_qwen3_vl_2b_lora_ps64_codex_candidate_v1.json` 完成合并，并以
-`configs/studies/server_transformers_merged_lora_ps64_codex_candidate_v1_ps20_pilot.json`
-复测；merged 与 adapter 的 20 条 case 顺序、原始输出和质量指标完全一致。
-
-### 2.17 2026-08-30：候选结果人工复核清单
-
-为减少人工终审的整理成本，新增 `scripts/build_candidate_error_review.py`，合并 80 条
-Jetson train/validation StudyReport，并与 `ps80_reviewed_v1` 候选 annotation 逐 case
-对齐。输出清单包含图片引用、来源组、候选 assessment、模型 assessment、原始输出、失败
-原因、风险等级是否匹配、事件 false positive/false negative 以及复核优先级。
-
-当前清单覆盖 80 个 case，77 条 JSON 有效，47 条风险等级匹配，47 条事件完全匹配，30
-个 case 存在事件差异，33 个 case 被标为高优先级；事件差异的 false positive 为 0，
-漏检主要集中在 `vehicle_near_maneuver_path`（20）、`narrow_passage`（18）和
-`visibility_occlusion`（9）。清单输出为
-`reports/label-review-20260830/ps80_candidate_error_review_v1.json`，仅支持人工复核，
-不会改变候选 annotation 或自动生成 `human_confirmed_v1`。
-
-### 2.18 2026-08-30：候选 LoRA 的 80 条服务器开发集评测
-
-为确认“候选标注—LoRA 训练—服务器评测”闭环，复用本地 RTX 4060、同一 Qwen3-VL
-revision、同一 `parking_risk_v2_strict_json` workload 和已生成的候选 adapter，分别对
-`ps80_development_v1` 的 64 条 train、16 条 validation 执行一次评测。参考标签仍为
-`ps80_reviewed_v1` 的 Codex 候选结果，因而本轮属于开发验证，不是人工金标质量验收。
-
-| 分片 | 样本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| train | 64 | 100% | 57.81% | 0 | 32.81% | 3424 ms |
-| validation | 16 | 100% | 62.50% | 0 | 18.75% | 4087 ms |
-| 合计 | 80 | 100% | 58.75% | 0 | 30.00% | 分片口径 |
-
-两处分片均完成严格 JSON 解析，且 validation 风险准确率没有低于 train；但两者事件
-micro-F1 都为 0，不能据此判断模型已学会六类风险事件。相较冻结 `ps20_pilot_v1` 的
-候选 adapter 结果，本轮 workload 与参考标签不同，不能直接进行质量横向比较；正式
-结论仍必须以人工确认的 `human_confirmed_v1` 和冻结测试集为准。
-
-本轮配置为
-`configs/studies/server_transformers_lora_ps64_codex_candidate_v1_ps80_train_strict_json.json`
-和 validation 版本。报告保存在本地忽略目录 `reports/`，SHA-256 分别为
-`d3bea513b671dfd5d84f034be1d5d1ec9b0f4bd259bcd7279b843cb067c853bf` 和
-`d1c81a98dfba0ed0f9b9ef3234988627aab6a8cd76ebc7052fc16c9b51afae87`。
-
-为降低人工复盘时直接编辑 80 行 JSONL 的出错概率，新增
-`scripts/apply_review_decisions.py`。该入口接收只包含 `case_id`、`review_status`、
-`human_assessment` 和 `review_note` 的决策 JSONL，支持只更新当前批次并保留其余
-`candidate` 记录；`confirmed` 且 assessment 为 `null` 时显式复制候选 assessment，
-`corrected` 则要求提供不同的结构化 assessment 和非空 review note。`--require-complete`
-用于人工终审结束后的全量门禁；同一入口也能生成初始状态为 `candidate` 的 80 条决策
-模板。本轮新增 4 个工作流测试，无硬件测试累计 76 个通过。
-
-为把正式训练门禁提前到模型加载前，`scripts/finetune_qwen3_vl_lora.py` 新增
-`--validate-only`。该模式只检查 dataset、label provenance、assessment schema、
-train/validation split、图片、workload 和模型目录，不导入 CUDA 训练依赖。候选配置实测
-返回 `validated`；当前 `ps64_reviewed_v1` 配置因实际数据的
-`label_source=codex_visual_review_v1_single_pass` 与配置要求的
-`human_confirmed_v1` 不一致而拒绝，确认 provenance gate 生效。本轮无硬件测试累计
-`77/77` 通过。
-
-### 2.19 2026-08-30：离线 HTML 人工复核页面
-
-为降低人工逐条编辑 80 行 JSONL 的操作成本，新增 `scripts/build_review_html.py`。该脚本
-读取 `reports/label-review-20260830/ps80_candidate_error_review_v1.json`，递归解析本地
-图片并生成单文件 HTML；当前页面已覆盖 80 个 case、内嵌 80 张图片，可在无服务、无联网
-条件下打开和复核。
-
-页面对每条记录提供 candidate assessment、model/failure、复核优先级和原始输出，并
-支持填写 `confirmed`/`corrected`、修正后的风险等级/事件/证据/驾驶建议及复核说明。
-下载结果固定为 `case_id`、`review_status`、`human_assessment`、`review_note` 四个
-字段，可直接交给 `scripts/apply_review_decisions.py`；页面不自动定稿，也不绕过
-`human_confirmed_v1` provenance gate。本轮新增 1 个 HTML 工作流测试，无硬件测试累计
-`78/78` 通过。
-
-页面还会将 pending、confirmed、corrected 以及当前字段内容保存到浏览器 localStorage，
-重新打开同一 HTML 文件时恢复草稿；该状态不写入仓库，也不改变 review package 的
-`candidate` 状态。
-
-页面另支持 `--reference-annotations` 展示只读 teacher 对照。本次用
-`ps80_teacher_v1.jsonl` 实测 80/80 case 对齐，使人工复核可以同时查看 teacher、Codex
-candidate 和模型输出；teacher 仍不被当作人工金标或最终训练标签。
-
-### 2.20 2026-08-30：补齐正式 ps64 后处理配置
-
-审计发现正式 `ps64_reviewed_v1` 已有训练、合并和服务器 study，但缺少合并后的导出、
-量化、engine 构建和 Jetson study 配置。本轮新增 FP16 ONNX 导出、人工确认校准的 INT4
-AWQ、INT4 ONNX 导出、FP16/INT4 LLM engine 构建，以及对应的 Jetson `ps20_pilot_v1`
-study。量化配置固定使用未来的 `ps16_human_confirmed_v1.jsonl`，因此当前 readiness
-仍未就绪，但人工终审完成后可以沿配置顺序直接执行。
-
-新增配置均通过 `ExternalFlowPlan` 解析测试，并固定 TensorRT Edge-LLM commit、模型
-revision、输入长度 768、KV cache 1024 和输出目录；没有修改现有候选产物或远端 Jetson
-工作树。
-
-同时把人工终审后的正式数据生成命令补入 README：标准 annotation 使用独立的
-`ps80_human_confirmed_v1.jsonl`，LoRA 记录沿用正式训练配置的 `ps64_reviewed_v1` 路径，
-INT4 校准记录固定输出 `ps16_human_confirmed_v1.jsonl`，并通过
-`--label-source human_confirmed_v1` 写入来源事实。当前没有执行该命令，因为人工
-annotation 尚未产生。
-
-### 2.21 2026-08-30：根据人工复核反馈细化驾驶建议解释
-
-人工复核样本 ps2-p2_img43_3396 时发现，候选结果给出的
-maintain_observation 可能低估了近场车辆/障碍对当前机动路径的影响，复核者倾向于
-prepare_to_stop。该样本尚未定稿，记录该反馈用于说明人工审核的判断边界。
-
-审核页面现将 driver_advice 枚举与中文含义并列展示，并提示复核者先判断
-risk_level、events 和 evidence，再选择相互一致的驾驶建议。若人工确认需要提高
-风险处置等级，应使用 corrected 并填写说明；页面不会自动覆盖候选 annotation。
-
-### 2.22 2026-08-30：人工确认数据后的 v1-v5 评测与候选收敛
-
-80 条人工复核记录已经导入正式标注链路，其中 73 条为 confirmed、7 条为 corrected，
-正式来源标识为 `human_confirmed_v1`。当前形成 64 条 LoRA 训练记录和 16 条冻结验证
-记录；验证集与训练集无 case 重叠。该数据仍是单人复核数据，不等同于双人一致性金标。
-
-在同一 16 条验证样本、同一严格 JSON workload、同一 Qwen3-VL-2B revision、
-Jetson Orin NX 和 TensorRT Edge-LLM 环境下，已完成多组 INT4 对照：
-
-| 版本 | JSON 有效率 | 风险准确率 | 事件 micro-F1 | 不安全建议率 | p50 端到端时延 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| v1：人工确认 LoRA + v1 校准 | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
-| v2：语义 workload LoRA + v1 校准 | 87.50% | 56.25% | 0.1429 | 18.75% | 7.32 s |
-| v3：语义 workload LoRA + v2 校准 | 100% | 68.75% | 0.1667 | 0% | 8.60 s |
-| v5：v1 LoRA + v2 校准 | 100% | 62.50% | 0.2857 | 18.75% | 7.64 s |
-
-v4 使用事件过采样进行服务器侧训练，但验证集事件 micro-F1 降至 0.3529，未进入
-Jetson 量化流程。v3 的风险准确率和不安全建议率较好，但事件召回偏低，且出现低风险
-场景输出空事件、同时包含 `prepare_to_stop` 等建议偏置；v5 的校准变量隔离实验没有
-改善 v1 的事件 micro-F1。因此当前部署和后续性能对照候选仍为 v1，v3 保留为安全性
-对照，v4 保留为训练假设的负结果，v5 保留为校准隔离证据。
-
-当前最重要的后续工作不是继续盲目增加量化变体，而是围绕事件漏检、风险等级与
-`driver_advice` 的一致性补充更多人工确认样本，并评估结构化输出后的语义校验或策略层。
-Jetson v1 证据位于
-`reports/jetson_edgellm_int4_awq_ps64_reviewed_v1_validation_strict_json_i768_k1024.json`；
-v3 与 v5 的对照报告、配置和训练记录均保留在仓库对应的 `reports/`、`configs/` 和
-`docs/` 路径中。修改后无硬件测试累计 81 个通过。
-
-### 2.23 2026-08-30：加入跨字段语义审计
-
-在严格 JSON 解析之后增加 `audit_assessment_semantics`，作为不修改模型输出的诊断层，
-并将 `semantic_consistency_rate` 与 `semantic_issue_counts` 写入后续 `StudyReport`。
-审计规则明确区分“准备随时停车”和“准备泊入车位”：低风险使用
-`prepare_to_stop`、高风险或近路径事件缺少 `yield`/`prepare_to_stop`、非低风险没有
-事件时记录告警；中风险使用 `prepare_to_stop` 不被自动否定。
-
-对 80 条 `human_confirmed_v1` 标注进行离线校验，77 条无告警，3 条仅为中风险但事件
-为空。新增语义模块及回归测试后，无硬件测试由 81 个增至 86 个并全部通过。该层是
-质量诊断和人工复盘依据，不改变既有风险准确率、事件 micro-F1 或历史报告。
-
-### 2.24 2026-08-30：补充逐事件质量指标
-
-`StudyReport.quality_metrics` 现在同时记录六类风险事件的逐类 support、TP、FP、FN、
-precision、recall、F1 以及 `event_macro_f1`。原有 `event_micro_f1` 计算口径保持不变：
-先累加所有类别的 TP/FP/FN，再计算整体 F1；macro-F1 用于发现某个稀有事件完全漏检
-但未被总体 micro-F1 明显暴露的情况。新增集成断言后，无硬件测试仍全部通过。
-
-### 2.25 2026-08-30：增加事件覆盖审计
-
-数据生成入口现在分别统计 LoRA train、validation 和 INT4 calibration 的六类事件，
-并输出 `event_coverage.warnings`。当前人工确认数据的事实是：训练集没有
-`fixed_obstacle_near_path`，`vru_near_maneuver_path` 仅有 1 条，验证集包含训练阶段
-未见的固定障碍样本；这解释了部分事件漏检不能仅靠调整量化参数解决。该审计只提示
-数据代表性问题，不改变既有拆分和历史实验结果。
+人工标注解决了候选标签不能直接作为正式训练来源的问题；LoRA 训练恢复了部分风险等级和事件预测，但受样本规模与类别覆盖限制，质量仍不稳定。AWQ 量化完成了权重压缩和engine 构建，但当前实测只证明了格式、部署和部分资源指标，尚未证明相对 Jetson Transformers FP16 的综合性能优势。后续优化重点应转向 Edge-LLM 的 builder、kernel、weight streaming、KV cache、prefill/decode 和服务层开销，而不是继续把量化后的负向质量结果解释为模型能力提升。
