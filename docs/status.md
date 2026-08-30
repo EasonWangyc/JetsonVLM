@@ -1,5 +1,51 @@
 # 当前实现状态
 
+## 2026-08-30 人工确认数据后的 v1-v5 INT4 对照
+
+- 80 条人工确认数据已形成正式 provenance：48 条 LoRA train、16 条 validation、16 条
+  独立 INT4 calibration；LoRA 与 calibration 无来源组交集，均使用
+  `parking_risk_v2_strict_json@sha256:6ca953643f38a13b579a77090c77d3fca30d3ba9a1b181d88ae11692ea150fec`。
+- 服务器 v3 calibration-aligned LoRA 训练和合并成功。16 条 validation 结果为严格 JSON
+  `100%`、风险准确率 `56.25%`、事件 micro-F1 `0.4286`、不安全建议率 `0%`；与 v2
+  服务器模型结果一致，说明本轮变化主要来自量化校准口径而不是训练文本。
+- Jetson 同口径结果如下：v1 INT4 为 `100% / 62.50% / 0.3000 / 18.75%`（JSON / 风险
+  准确率 / 事件 micro-F1 / 不安全建议率，p50 `7.84 s`）；v2 INT4 为
+  `87.50% / 56.25% / 0.1429 / 18.75%`（p50 `7.32 s`）；v3 calibration-aligned INT4
+  为 `100% / 68.75% / 0.1667 / 0%`（p50 `8.60 s`）。
+- v3 的风险准确率和安全建议率改善伴随事件召回率降至 `10%`，逐样本检查还发现低风险
+  场景普遍输出包含 `prepare_to_stop` 的完整建议集合，属于低风险/空事件偏置；因此
+  v3 作为已验证实验候选保留，不替换当前 v1 事件识别参考版本。
+- v3 的量化、导出、LLM/visual engine 构建、HTTP health check 和 16 条 study 均已完成，
+  验证后服务已停止。完整 StudyReport 保存在本地忽略目录
+  `reports/jetson_edgellm_int4_awq_ps64_reviewed_v3_calibration_aligned_validation_strict_json_i768_k1024.json`。
+- v4 增加事件样本重采样（有效训练记录 80 条），但服务器 validation 的风险准确率由
+  v3 的 `56.25%` 降至 `37.50%`，事件 micro-F1 由 `0.4286` 降至 `0.3529`，因此没有
+  继续量化部署。训练入口新增的 `event_oversampling_factor` 默认值为 1，旧配置行为不变，
+  并由无硬件测试覆盖。
+- v5 保持 v1 合并模型不变，仅使用语义 v2 calibration 重新量化；Jetson 结果为严格 JSON
+  `100%`、风险准确率 `62.50%`、事件 micro-F1 `0.2857`、不安全建议率 `18.75%`、p50
+  `7.64 s`。相对 v1 的事件 micro-F1 `0.3000` 没有改善，说明单独替换 calibration
+  不能解决板端事件漏检；v5 报告为
+  `reports/jetson_edgellm_int4_awq_ps64_reviewed_v1_v2_calibration_validation_strict_json_i768_k1024.json`。
+- `StudyReport` 新增 `event_macro_f1` 和 `event_metrics`，分别记录六类事件的平均 F1
+  以及 support/TP/FP/FN/precision/recall/F1；既有 `event_micro_f1` 计算口径保持不变。
+- 数据生成入口新增 `event_coverage` 审计。当前 64 条 LoRA 数据的训练覆盖为：
+  `vehicle=12`、`narrow=11`、`visibility=3`、`vru=1`、`fixed=0`、`parking=0`；
+  validation 含 1 条训练未见的 `fixed_obstacle_near_path`。该覆盖缺口是下一轮人工
+  数据扩充的前置条件，不应通过继续调整量化参数规避。
+
+## 2026-08-30 人工复核反馈：驾驶建议需要结合场景重新判断
+
+- 复核样本 ps2-p2_img43_3396 时发现，Codex candidate 与模型均给出
+  maintain_observation，但人工观察认为近场车辆/障碍可能已经影响当前机动路径，
+  倾向于 prepare_to_stop。该样本尚未写入正式人工标注，当前结论仍由复核者最终确认。
+- 该反馈说明人工复核不能只比较 candidate 与 model 是否一致；需要联合检查
+  risk_level、events、evidence 和 driver_advice。如果确认存在近场路径冲突，
+  应同步修正相互匹配的字段，并将状态设为 corrected、填写 review_note。
+- 审核页面已为五种 driver_advice 增加中文语义说明和跨字段复核提示，重新生成的
+  页面仍为 reports/label-review-20260830/ps80_candidate_review.html。该改动只改善
+  复核可解释性，不自动改变 80 条候选标签或评测规则。
+
 ## 2026-08-30 候选 LoRA 80 条服务器开发集评测
 
 - 在本地 RTX 4060 上复用候选 adapter、Qwen3-VL revision 和

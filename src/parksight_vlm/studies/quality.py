@@ -9,6 +9,7 @@ from parksight_vlm.assessment import (
     ParkingAssessment,
     ParkingRiskEvent,
     RiskLevel,
+    audit_assessment_semantics,
 )
 from parksight_vlm.inference import InferenceRecord
 
@@ -29,8 +30,15 @@ def compute_quality_metrics(
     false_positive = 0
     false_negative = 0
     unsafe_count = 0
+    semantic_valid_count = 0
+    semantic_consistent_count = 0
+    semantic_issue_counts: dict[str, int] = {}
     event_errors: dict[str, dict[str, int]] = {
         event.value: {"false_positive": 0, "false_negative": 0}
+        for event in ParkingRiskEvent
+    }
+    event_counts: dict[str, dict[str, int]] = {
+        event.value: {"support": 0, "true_positive": 0, "false_positive": 0, "false_negative": 0}
         for event in ParkingRiskEvent
     }
 
@@ -46,12 +54,34 @@ def compute_quality_metrics(
             valid_count += 1
             if predicted.risk_level == reference.risk_level:
                 risk_level_correct += 1
+            semantic_valid_count += 1
+            semantic_audit = audit_assessment_semantics(predicted)
+            if semantic_audit.is_consistent:
+                semantic_consistent_count += 1
+            for issue in semantic_audit.issues:
+                semantic_issue_counts[issue.value] = (
+                    semantic_issue_counts.get(issue.value, 0) + 1
+                )
 
         reference_events = set(reference.events)
         predicted_events = set(predicted.events) if predicted is not None else set()
         true_positive += len(reference_events & predicted_events)
         false_positive += len(predicted_events - reference_events)
         false_negative += len(reference_events - predicted_events)
+        for event in ParkingRiskEvent:
+            event_name = event.value
+            event_in_reference = event in reference_events
+            event_in_prediction = event in predicted_events
+            event_counts[event_name]["support"] += int(event_in_reference)
+            event_counts[event_name]["true_positive"] += int(
+                event_in_reference and event_in_prediction
+            )
+            event_counts[event_name]["false_positive"] += int(
+                not event_in_reference and event_in_prediction
+            )
+            event_counts[event_name]["false_negative"] += int(
+                event_in_reference and not event_in_prediction
+            )
         for event in predicted_events - reference_events:
             event_errors[event.value]["false_positive"] += 1
         for event in reference_events - predicted_events:
@@ -63,6 +93,29 @@ def compute_quality_metrics(
     precision = _safe_divide(true_positive, true_positive + false_positive)
     recall = _safe_divide(true_positive, true_positive + false_negative)
     f1 = _safe_divide(2.0 * precision * recall, precision + recall)
+    event_metrics: dict[str, dict[str, int | float]] = {}
+    event_f1_values: list[float] = []
+    for event in ParkingRiskEvent:
+        counts = event_counts[event.value]
+        event_precision = _safe_divide(
+            counts["true_positive"],
+            counts["true_positive"] + counts["false_positive"],
+        )
+        event_recall = _safe_divide(
+            counts["true_positive"],
+            counts["true_positive"] + counts["false_negative"],
+        )
+        event_f1 = _safe_divide(
+            2.0 * event_precision * event_recall,
+            event_precision + event_recall,
+        )
+        event_f1_values.append(event_f1)
+        event_metrics[event.value] = {
+            **counts,
+            "precision": event_precision,
+            "recall": event_recall,
+            "f1": event_f1,
+        }
     sample_count = len(records)
     return QualityMetrics(
         sample_count=sample_count,
@@ -71,8 +124,16 @@ def compute_quality_metrics(
         event_micro_precision=precision,
         event_micro_recall=recall,
         event_micro_f1=f1,
+        event_macro_f1=sum(event_f1_values) / len(event_f1_values),
         unsafe_advice_rate=unsafe_count / sample_count,
+        semantic_consistency_rate=(
+            semantic_consistent_count / semantic_valid_count
+            if semantic_valid_count
+            else 0.0
+        ),
         event_errors=event_errors,
+        event_metrics=event_metrics,
+        semantic_issue_counts=dict(sorted(semantic_issue_counts.items())),
     )
 
 

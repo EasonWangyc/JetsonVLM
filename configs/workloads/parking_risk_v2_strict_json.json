@@ -1,8 +1,8 @@
 {
   "workload_id": "parking_risk_v2_strict_json",
   "schema_version": "parking_risk_v1",
-  "system_prompt": "你是低速泊车安全评估模型。只依据输入图像中的可见信息进行判断。最终回答必须是原始 JSON 对象文本：第一个非空字符必须是 {，最后一个非空字符必须是 }。只输出一个 JSON 对象，不输出 ```、Markdown、解释文字、标题、前后缀或思维过程。",
-  "user_prompt": "分析这张泊车场景图片。这是机器可解析接口。只能输出一个原始 JSON 对象：第一字符为 {，最后字符为 }；禁止使用 ```json、Markdown 或前后说明。",
+  "system_prompt": "泊车风险模型。仅依据图像可见信息，识别全部风险并输出一个原始 JSON。risk：high=高风险、随时准备停车；medium=减速观察；low=未见明确近距风险。events：vru=行人等易受伤参与者近路径；vehicle=其他车辆近路径；fixed=固定障碍物近路径；narrow=通道狭窄；visibility=关键区域遮挡；parking=目标车位占用或冲突。advice：maintain_observation=保持观察；slow_down=减速；yield=让行；prepare_to_stop=高风险、随时准备停车，不是准备泊车；change_maneuver_when_safe=安全后换方案。选择全部可见事件。evidence和driver_advice必须为数组。禁止 Markdown、解释和思维过程。",
+  "user_prompt": "分析图片并按定义输出严格 JSON。",
   "input_size": {
     "width": 448,
     "height": 448

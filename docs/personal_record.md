@@ -1278,3 +1278,69 @@ revision、输入长度 768、KV cache 1024 和输出目录；没有修改现有
 INT4 校准记录固定输出 `ps16_human_confirmed_v1.jsonl`，并通过
 `--label-source human_confirmed_v1` 写入来源事实。当前没有执行该命令，因为人工
 annotation 尚未产生。
+
+### 2.21 2026-08-30：根据人工复核反馈细化驾驶建议解释
+
+人工复核样本 ps2-p2_img43_3396 时发现，候选结果给出的
+maintain_observation 可能低估了近场车辆/障碍对当前机动路径的影响，复核者倾向于
+prepare_to_stop。该样本尚未定稿，记录该反馈用于说明人工审核的判断边界。
+
+审核页面现将 driver_advice 枚举与中文含义并列展示，并提示复核者先判断
+risk_level、events 和 evidence，再选择相互一致的驾驶建议。若人工确认需要提高
+风险处置等级，应使用 corrected 并填写说明；页面不会自动覆盖候选 annotation。
+
+### 2.22 2026-08-30：人工确认数据后的 v1-v5 评测与候选收敛
+
+80 条人工复核记录已经导入正式标注链路，其中 73 条为 confirmed、7 条为 corrected，
+正式来源标识为 `human_confirmed_v1`。当前形成 64 条 LoRA 训练记录和 16 条冻结验证
+记录；验证集与训练集无 case 重叠。该数据仍是单人复核数据，不等同于双人一致性金标。
+
+在同一 16 条验证样本、同一严格 JSON workload、同一 Qwen3-VL-2B revision、
+Jetson Orin NX 和 TensorRT Edge-LLM 环境下，已完成多组 INT4 对照：
+
+| 版本 | JSON 有效率 | 风险准确率 | 事件 micro-F1 | 不安全建议率 | p50 端到端时延 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v1：人工确认 LoRA + v1 校准 | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
+| v2：语义 workload LoRA + v1 校准 | 87.50% | 56.25% | 0.1429 | 18.75% | 7.32 s |
+| v3：语义 workload LoRA + v2 校准 | 100% | 68.75% | 0.1667 | 0% | 8.60 s |
+| v5：v1 LoRA + v2 校准 | 100% | 62.50% | 0.2857 | 18.75% | 7.64 s |
+
+v4 使用事件过采样进行服务器侧训练，但验证集事件 micro-F1 降至 0.3529，未进入
+Jetson 量化流程。v3 的风险准确率和不安全建议率较好，但事件召回偏低，且出现低风险
+场景输出空事件、同时包含 `prepare_to_stop` 等建议偏置；v5 的校准变量隔离实验没有
+改善 v1 的事件 micro-F1。因此当前部署和后续性能对照候选仍为 v1，v3 保留为安全性
+对照，v4 保留为训练假设的负结果，v5 保留为校准隔离证据。
+
+当前最重要的后续工作不是继续盲目增加量化变体，而是围绕事件漏检、风险等级与
+`driver_advice` 的一致性补充更多人工确认样本，并评估结构化输出后的语义校验或策略层。
+Jetson v1 证据位于
+`reports/jetson_edgellm_int4_awq_ps64_reviewed_v1_validation_strict_json_i768_k1024.json`；
+v3 与 v5 的对照报告、配置和训练记录均保留在仓库对应的 `reports/`、`configs/` 和
+`docs/` 路径中。修改后无硬件测试累计 81 个通过。
+
+### 2.23 2026-08-30：加入跨字段语义审计
+
+在严格 JSON 解析之后增加 `audit_assessment_semantics`，作为不修改模型输出的诊断层，
+并将 `semantic_consistency_rate` 与 `semantic_issue_counts` 写入后续 `StudyReport`。
+审计规则明确区分“准备随时停车”和“准备泊入车位”：低风险使用
+`prepare_to_stop`、高风险或近路径事件缺少 `yield`/`prepare_to_stop`、非低风险没有
+事件时记录告警；中风险使用 `prepare_to_stop` 不被自动否定。
+
+对 80 条 `human_confirmed_v1` 标注进行离线校验，77 条无告警，3 条仅为中风险但事件
+为空。新增语义模块及回归测试后，无硬件测试由 81 个增至 86 个并全部通过。该层是
+质量诊断和人工复盘依据，不改变既有风险准确率、事件 micro-F1 或历史报告。
+
+### 2.24 2026-08-30：补充逐事件质量指标
+
+`StudyReport.quality_metrics` 现在同时记录六类风险事件的逐类 support、TP、FP、FN、
+precision、recall、F1 以及 `event_macro_f1`。原有 `event_micro_f1` 计算口径保持不变：
+先累加所有类别的 TP/FP/FN，再计算整体 F1；macro-F1 用于发现某个稀有事件完全漏检
+但未被总体 micro-F1 明显暴露的情况。新增集成断言后，无硬件测试仍全部通过。
+
+### 2.25 2026-08-30：增加事件覆盖审计
+
+数据生成入口现在分别统计 LoRA train、validation 和 INT4 calibration 的六类事件，
+并输出 `event_coverage.warnings`。当前人工确认数据的事实是：训练集没有
+`fixed_obstacle_near_path`，`vru_near_maneuver_path` 仅有 1 条，验证集包含训练阶段
+未见的固定障碍样本；这解释了部分事件漏检不能仅靠调整量化参数解决。该审计只提示
+数据代表性问题，不改变既有拆分和历史实验结果。

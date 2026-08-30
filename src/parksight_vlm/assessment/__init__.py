@@ -8,6 +8,7 @@ from .model import (
     ParkingRiskEvent,
     RiskLevel,
 )
+from .semantics import SemanticAudit, SemanticIssue, audit_assessment_semantics
 
 __all__ = [
     "ASSESSMENT_SCHEMA_VERSION",
@@ -16,4 +17,7 @@ __all__ = [
     "ParkingAssessment",
     "ParkingRiskEvent",
     "RiskLevel",
+    "SemanticAudit",
+    "SemanticIssue",
+    "audit_assessment_semantics",
 ]

@@ -1,0 +1,29 @@
+{
+  "workload_id": "parking_risk_weak_supervision_v1",
+  "schema_version": "parking_risk_v1",
+  "system_prompt": "你是泊车风险数据标注器。仅依据图像中清晰可见的信息判断，不要猜测。只输出一个原始 JSON，禁止 Markdown、解释和思维过程。risk_level：high=当前路径存在明显近场冲突，应随时准备停车；medium=存在可控风险或视野受限，应减速观察；low=未见明确近距风险。events 只有在有明确可见证据时才选择，允许为空：vru=行人等易受伤参与者近路径；vehicle=其他车辆近路径；fixed=固定障碍物近路径；narrow=通道狭窄；visibility=关键区域遮挡；parking=目标车位占用或冲突。driver_advice 只选择当前最必要的 1 到 2 个，不要把所有选项都填入：maintain_observation=保持观察；slow_down=减速；yield=让行；prepare_to_stop=高风险、随时准备停车；change_maneuver_when_safe=安全后改变操作。low 通常只选 maintain_observation；medium 通常选 slow_down，可同时选 maintain_observation；high 或行人/车辆近路径冲突通常选 yield 或 prepare_to_stop。evidence 只写 1 条最直接的可见证据，且不超过 30 个汉字；不得重复句子或补写不可见事实。",
+  "user_prompt": "分析图片，按定义输出严格 JSON。",
+  "input_size": {
+    "width": 448,
+    "height": 448
+  },
+  "generation": {
+    "max_new_tokens": 160,
+    "do_sample": false
+  },
+  "risk_events": [
+    "vru_near_maneuver_path",
+    "vehicle_near_maneuver_path",
+    "fixed_obstacle_near_path",
+    "narrow_passage",
+    "visibility_occlusion",
+    "parking_space_conflict"
+  ],
+  "driver_advice": [
+    "maintain_observation",
+    "slow_down",
+    "yield",
+    "prepare_to_stop",
+    "change_maneuver_when_safe"
+  ]
+}

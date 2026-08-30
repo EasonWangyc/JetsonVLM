@@ -7,10 +7,11 @@ import json
 import math
 import random
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from parksight_vlm.assessment import ParkingAssessment
+from parksight_vlm.assessment import ParkingAssessment, ParkingRiskEvent
 from parksight_vlm.workload import FrozenWorkload
 
 
@@ -26,6 +27,74 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     if not records:
         raise ValueError("training dataset must not be empty")
     return records
+
+
+def _training_event_coverage(
+    train_records: list[dict[str, Any]],
+    validation_records: list[dict[str, Any]],
+    recommended_min_train_support: int = 3,
+) -> dict[str, Any]:
+    """Return event coverage warnings for the cheap pre-training validation."""
+    if recommended_min_train_support < 1:
+        raise ValueError("recommended_min_train_support must be at least 1")
+
+    def counts(records: list[dict[str, Any]]) -> dict[str, int]:
+        observed = Counter(
+            event
+            for record in records
+            for event in record.get("assessment", {}).get("events", [])
+        )
+        return {event.value: observed.get(event.value, 0) for event in ParkingRiskEvent}
+
+    train_counts = counts(train_records)
+    validation_counts = counts(validation_records)
+    warnings: list[dict[str, Any]] = []
+    for event in ParkingRiskEvent:
+        event_name = event.value
+        train_count = train_counts[event_name]
+        if train_count == 0:
+            warnings.append({"type": "missing_from_train", "event": event_name})
+        elif train_count < recommended_min_train_support:
+            warnings.append(
+                {
+                    "type": "low_train_support",
+                    "event": event_name,
+                    "count": train_count,
+                    "recommended_minimum": recommended_min_train_support,
+                }
+            )
+        if validation_counts[event_name] > 0 and train_count == 0:
+            warnings.append(
+                {"type": "validation_not_seen_in_train", "event": event_name}
+            )
+    return {
+        "train": train_counts,
+        "validation": validation_counts,
+        "recommended_min_train_support": recommended_min_train_support,
+        "warnings": warnings,
+    }
+
+
+def enforce_training_event_coverage(
+    coverage: dict[str, Any],
+    *,
+    min_train_event_support: int = 3,
+    require_validation_event_coverage: bool = True,
+) -> None:
+    """在训练前将事件覆盖要求提升为硬门禁。"""
+    if min_train_event_support < 1:
+        raise ValueError("min_train_event_support must be at least 1")
+    violations: list[str] = []
+    for event in (event.value for event in ParkingRiskEvent):
+        count = coverage["train"].get(event, 0)
+        if count < min_train_event_support:
+            violations.append(
+                f"train:{event}={count}<{min_train_event_support}"
+            )
+        if require_validation_event_coverage and coverage["validation"].get(event, 0) == 0:
+            violations.append(f"validation:{event}=0")
+    if violations:
+        raise ValueError("event coverage gate failed: " + ", ".join(violations))
 
 
 def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -44,6 +113,7 @@ def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
     records = _load_records(dataset_path)
     label_source = _validate_label_provenance(records, config)
     factor = int(config.get("non_low_oversampling_factor", 1))
+    event_factor = int(config.get("event_oversampling_factor", 1))
     unique_train_records = [record for record in records if record.get("split") == "train"]
     validation_records = [
         record for record in records if record.get("split") == "validation"
@@ -56,7 +126,24 @@ def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
             raise FileNotFoundError(f"training image is missing at row {index}: {image}")
         ParkingAssessment.from_mapping(record.get("assessment"))
 
-    effective_train_records = _oversample_non_low_records(unique_train_records, factor)
+    event_coverage = _training_event_coverage(
+        unique_train_records,
+        validation_records,
+    )
+    require_event_coverage = config.get("require_event_coverage", False)
+    if not isinstance(require_event_coverage, bool):
+        raise ValueError("require_event_coverage must be a boolean")
+    if require_event_coverage:
+        enforce_training_event_coverage(
+            event_coverage,
+            min_train_event_support=int(config.get("min_train_event_support", 3)),
+            require_validation_event_coverage=bool(
+                config.get("require_validation_event_coverage", True)
+            ),
+        )
+    effective_train_records = _oversample_training_records(
+        unique_train_records, factor, event_factor
+    )
     return {
         "status": "validated",
         "dataset_path": str(dataset_path),
@@ -67,7 +154,11 @@ def validate_training_config(config: dict[str, Any]) -> dict[str, Any]:
         "sample_count": len(records),
         "unique_train_samples": len(unique_train_records),
         "effective_train_samples": len(effective_train_records),
+        "non_low_oversampling_factor": factor,
+        "event_oversampling_factor": event_factor,
         "validation_samples": len(validation_records),
+        "event_coverage": event_coverage,
+        "require_event_coverage": require_event_coverage,
     }
 
 
@@ -112,6 +203,28 @@ def _oversample_non_low_records(
     for record in records:
         risk_level = record.get("assessment", {}).get("risk_level")
         repeats = factor if risk_level != "low" else 1
+        expanded.extend([record] * repeats)
+    return expanded
+
+
+def _oversample_training_records(
+    records: list[dict[str, Any]],
+    non_low_factor: int,
+    event_factor: int,
+) -> list[dict[str, Any]]:
+    """Increase event exposure while retaining the non-low safety weighting."""
+    if non_low_factor < 1:
+        raise ValueError("non_low_oversampling_factor must be at least 1")
+    if event_factor < 1:
+        raise ValueError("event_oversampling_factor must be at least 1")
+    expanded: list[dict[str, Any]] = []
+    for record in records:
+        assessment = record.get("assessment", {})
+        risk_level = assessment.get("risk_level")
+        has_event = bool(assessment.get("events"))
+        repeats = non_low_factor if risk_level != "low" else 1
+        if has_event:
+            repeats = max(repeats, event_factor)
         expanded.extend([record] * repeats)
     return expanded
 
@@ -218,10 +331,12 @@ def main() -> int:
     unique_train_records = [
         record for record in records if record["split"] == "train"
     ]
-    train_records = _oversample_non_low_records(
+    train_records = _oversample_training_records(
         unique_train_records,
         int(config.get("non_low_oversampling_factor", 1)),
+        int(config.get("event_oversampling_factor", 1)),
     )
+    event_factor = int(config.get("event_oversampling_factor", 1))
     validation_records = [
         record for record in records if record["split"] == "validation"
     ]
@@ -325,6 +440,7 @@ def main() -> int:
         "non_low_oversampling_factor": int(
             config.get("non_low_oversampling_factor", 1)
         ),
+        "event_oversampling_factor": event_factor,
         "validation_samples": len(validation_records),
         "epochs": epochs,
         "optimizer_steps": optimizer_steps,

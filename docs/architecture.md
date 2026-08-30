@@ -12,7 +12,7 @@ ParkingCaseCatalog -> ParkingCase -> RiskRuntime -> InferenceRecord -> StudyRunn
 
 | Module | Interface | 输入 | 输出 | 内部职责 |
 | --- | --- | --- | --- | --- |
-| `assessment` | `ParkingAssessment.from_mapping(payload)` | JSON mapping | `ParkingAssessment` | 字段完整性、枚举、文本、事件集合与 schema version 校验 |
+| `assessment` | `ParkingAssessment.from_mapping(payload)` / `audit_assessment_semantics(assessment)` | JSON mapping 或已解析 assessment | `ParkingAssessment` / `SemanticAudit` | JSON 契约校验，以及风险等级、事件和驾驶建议的可解释语义审计 |
 | `casebook` | `ParkingCaseCatalog.load()` / `ParkingCaseCatalog.validate()` | manifest、标注、工作负载选择 | `ParkingCase` 集合 | 来源组约束、数据集划分、冻结测试集与图片引用解析 |
 | `inference` | `RiskRuntime.analyze(case, workload)` | `ParkingCase`、冻结工作负载 | `InferenceRecord` | 输入准备、Adapter 调用、输出解析、阶段计时与运行失败记录 |
 | `studies` | `StudyRunner.run(casebook, runtime, study)` | casebook、runtime、研究配置 | `StudyReport` | 推理记录归档、任务质量、性能分位数、环境快照与失败归因 |
@@ -70,7 +70,7 @@ src/parksight_vlm/
   studies/
     model.py          # Study 与 StudyReport
     runner.py         # StudyRunner
-    quality.py        # 质量指标
+    quality.py        # micro/macro 质量指标与语义一致性汇总
     performance.py    # 时延、资源和环境汇总
   app/
     analyze_image.py  # 单图分析命令

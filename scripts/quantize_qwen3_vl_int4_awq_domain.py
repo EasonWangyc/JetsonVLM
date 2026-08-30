@@ -57,6 +57,18 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--dataset-path", required=True, type=Path)
     parser.add_argument("--num-samples", required=True, type=int)
+    parser.add_argument(
+        "--calibration-batch-size",
+        type=int,
+        default=1,
+        help="calibration batch size; use 1 on 8GB Jetson devices",
+    )
+    parser.add_argument(
+        "--logits-to-keep",
+        type=int,
+        default=1,
+        help="limit calibration logits to reduce temporary GPU memory",
+    )
     args = parser.parse_args()
 
     edge_llm_root = args.edge_llm_root.resolve()
@@ -68,6 +80,10 @@ def main() -> int:
         )
     if args.num_samples <= 0:
         raise ValueError("num_samples must be positive")
+    if args.calibration_batch_size <= 0:
+        raise ValueError("calibration_batch_size must be positive")
+    if args.logits_to_keep <= 0:
+        raise ValueError("logits_to_keep must be positive")
 
     dataset_path = args.dataset_path.resolve()
     records = _load_records(dataset_path)
@@ -78,9 +94,45 @@ def main() -> int:
         )
 
     sys.path.insert(0, str(edge_llm_root))
+    from tensorrt_edgellm.quantization import quantize as quantize_module
     from tensorrt_edgellm.quantization.quantize import quantize_and_export
 
+    original_loader = quantize_module._text_calib_dataloader
+
+    def low_memory_loader(
+        tokenizer: Any,
+        text_dataset: Any,
+        *,
+        batch_size: int = 1,
+        num_samples: int = 512,
+        max_length: int = 512,
+    ) -> Any:
+        return original_loader(
+            tokenizer,
+            text_dataset,
+            batch_size=args.calibration_batch_size,
+            num_samples=num_samples,
+            max_length=max_length,
+        )
+
+    def low_memory_calibrate(model: Any, dataloader: Any) -> None:
+        for data in dataloader:
+            data = data.to(model.device)
+            model(data, logits_to_keep=args.logits_to_keep)
+
+    quantize_module._text_calib_dataloader = low_memory_loader
+    quantize_module._calibrate = low_memory_calibrate
+
     selected_records = records[: args.num_samples]
+    workload_identities = {
+        record.get("workload_identity")
+        for record in selected_records
+    }
+    if len(workload_identities) != 1 or None in workload_identities:
+        raise ValueError(
+            "selected calibration rows must share one non-empty workload_identity"
+        )
+    calibration_workload_identity = next(iter(workload_identities))
 
     def domain_text_dataset() -> Iterator[str]:
         yield from _iter_texts(selected_records)
@@ -107,7 +159,10 @@ def main() -> int:
         "model_dir": str(args.model_dir.resolve()),
         "calibration_dataset": str(dataset_path),
         "calibration_rows": args.num_samples,
+        "calibration_batch_size": args.calibration_batch_size,
+        "logits_to_keep": args.logits_to_keep,
         "calibration_sha256": _sha256(dataset_path),
+        "calibration_workload_identity": calibration_workload_identity,
         "edge_llm_revision": actual_revision,
     }
     output_dir.mkdir(parents=True, exist_ok=True)

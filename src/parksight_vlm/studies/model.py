@@ -100,8 +100,12 @@ class QualityMetrics:
     event_micro_precision: float
     event_micro_recall: float
     event_micro_f1: float
+    event_macro_f1: float
     unsafe_advice_rate: float
+    semantic_consistency_rate: float
     event_errors: Mapping[str, Mapping[str, int]]
+    event_metrics: Mapping[str, Mapping[str, int | float]]
+    semantic_issue_counts: Mapping[str, int]
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -111,8 +115,14 @@ class QualityMetrics:
             "event_micro_precision": self.event_micro_precision,
             "event_micro_recall": self.event_micro_recall,
             "event_micro_f1": self.event_micro_f1,
+            "event_macro_f1": self.event_macro_f1,
             "unsafe_advice_rate": self.unsafe_advice_rate,
+            "semantic_consistency_rate": self.semantic_consistency_rate,
             "event_errors": {event: dict(errors) for event, errors in self.event_errors.items()},
+            "event_metrics": {
+                event: dict(metrics) for event, metrics in self.event_metrics.items()
+            },
+            "semantic_issue_counts": dict(self.semantic_issue_counts),
         }
 
 

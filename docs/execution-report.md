@@ -1665,6 +1665,17 @@ review package 才会发生变化。
 并将 teacher 结果作为只读对照展示；该输入不参与人工决策导出，也不改变最终 provenance
 gate。
 
+## 33. 人工复核反馈与驾驶建议可解释性（2026-08-30）
+
+人工复核样本 ps2-p2_img43_3396 时发现，Codex candidate 和模型结果均为
+maintain_observation，但人工判断可能需要 prepare_to_stop。该样本仍处于审核中，
+没有被提前写入 human_confirmed_v1。
+
+针对这一反馈，scripts/build_review_html.py 为所有 driver_advice 选项增加中文语义
+说明，并在驾驶建议下方增加跨字段一致性提示，要求人工同步检查风险等级、事件、证据和
+驾驶建议。页面重新生成后保持 80/80 图片内嵌、80/80 reference 对齐和原有 JSONL
+导出契约；79 项无硬件测试通过，Python 编译检查和 git diff --check 通过。
+
 ## 32. 正式 ps64 后处理 flow 配置（2026-08-30）
 
 审计正式路径后发现，`ps64_reviewed_v1` 已有 LoRA 训练、合并和服务器研究配置，但缺少
@@ -1680,3 +1691,96 @@ gate。
 `ps80_human_confirmed_v1.jsonl`，输出 `ps64_reviewed_v1.jsonl` 和
 `ps16_human_confirmed_v1.jsonl`，并显式传入 `--label-source human_confirmed_v1`。该命令
 只在真实人工复核结果存在后执行，当前未提前运行。
+
+## 34. 人工确认数据后的校准口径对照（2026-08-30）
+
+人工复核完成后，正式数据按来源组拆分为 48 条 LoRA train、16 条 validation 和 16 条
+独立 INT4 calibration。训练、校准和 Jetson study 统一使用
+`parking_risk_v2_strict_json@sha256:6ca953643f38a13b579a77090c77d3fca30d3ba9a1b181d88ae11692ea150fec`，
+模型 revision 为 `89644892e4d85e24eaac8bacfd4f463576704203`，Edge-LLM revision 为
+`7f061f21f0a581ba234a1e233c9315b89d8e47d6`。
+
+服务器 v3 calibration-aligned LoRA 训练、合并和 validation 均成功；16 条 validation 的
+严格 JSON 为 `100%`，风险准确率 `56.25%`，事件 micro-F1 `0.4286`，不安全建议率 `0%`。
+
+Jetson 16 条 validation 的可比结果为：
+
+| 版本 | 校准文本 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | p50 端到端 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| v1 INT4 | v1 calibration | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
+| v2 INT4 | v1 calibration + semantic v2 LoRA | 87.50% | 56.25% | 0.1429 | 18.75% | 7.32 s |
+| v3 INT4 | semantic v2 calibration + semantic v2 LoRA | 100% | 68.75% | 0.1667 | 0% | 8.60 s |
+
+v3 量化时首次因 Jetson CUDA/NVML 内部分配器断言失败，清理进程后重试成功；最终量化、
+ONNX 导出、LLM/visual engine 构建、服务健康检查和完整 validation 均成功。逐样本核对
+显示 v3 的事件召回率为 `10%`，且低风险场景普遍输出包含 `prepare_to_stop` 的完整建议
+集合，形成低风险/空事件偏置。基于事件识别和整体均衡性，当前保留 v1 作为部署参考，v3
+作为校准对齐实验候选，不替换 v1。
+
+可复现配置：
+
+```text
+configs/training/qwen3_vl_2b_lora_ps64_reviewed_v3_calibration_aligned.json
+configs/studies/server_transformers_lora_ps64_reviewed_v3_calibration_aligned_ps80_validation.json
+configs/studies/jetson_edgellm_int4_awq_ps64_reviewed_v3_calibration_aligned_validation.json
+```
+
+完整 v3 StudyReport 位于本地忽略目录：
+
+```text
+reports/jetson_edgellm_int4_awq_ps64_reviewed_v3_calibration_aligned_validation_strict_json_i768_k1024.json
+```
+
+## 35. 事件重点采样与 calibration 隔离实验（2026-08-30）
+
+为处理人工 validation 中的事件漏检，训练入口新增可选的
+`event_oversampling_factor`。v4 在保持 48 个唯一 train 样本、16 个 validation 样本和
+人工 provenance 不变的条件下，将带事件训练记录提高至 3 倍，有效训练记录从 65 条增至
+80 条。服务器 validation 结果为严格 JSON `100%`、风险准确率 `37.50%`、事件
+micro-F1 `0.3529`、事件 recall `0.6`、不安全建议率 `0%`；相对 v3 的风险准确率
+`56.25%` 和事件 micro-F1 `0.4286` 均退化，因此 v4 未进入 Jetson 量化。
+
+随后进行 v5 calibration-only 隔离实验：直接复用 v1 合并模型，只把校准数据替换为
+与 v2 workload 对齐的 `ps16_human_confirmed_v2_semantic.jsonl`。量化、ONNX 导出、
+LLM/visual engine 构建、HTTP health check 和 16 条 Jetson validation 均成功，结果为：
+
+| 版本 | 模型训练 | calibration | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | p50 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| v1 | v1 LoRA | v1 | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
+| v5 | v1 LoRA | semantic v2 | 100% | 62.50% | 0.2857 | 18.75% | 7.64 s |
+
+v5 没有改善事件 micro-F1，说明当前板端事件漏检不能仅归因于 calibration workload；结合
+v4 的服务器退化结果，当前保留 v1 作为部署参考，v4 和 v5 作为已验证的失败/隔离候选。
+对应配置为
+`configs/studies/jetson_edgellm_int4_awq_ps64_reviewed_v1_v2_calibration_validation.json`，
+报告位于本地忽略目录
+`reports/jetson_edgellm_int4_awq_ps64_reviewed_v1_v2_calibration_validation_strict_json_i768_k1024.json`。
+
+## 36. 逐事件质量指标与语义审计（2026-08-30）
+
+`QualityMetrics` 在保留原有事件 micro precision/recall/F1 的基础上，新增
+`event_macro_f1` 和 `event_metrics`。每个事件均记录 support、true positive、false
+positive、false negative、precision、recall 和 F1；macro-F1 是六类事件 F1 的算术平均，
+用于暴露稀有事件退化，不改变历史报告的 micro-F1 口径。
+
+严格 JSON 解析后的 `audit_assessment_semantics` 继续作为非破坏性诊断层，报告
+`semantic_consistency_rate` 与 `semantic_issue_counts`，不自动改写模型输出。离线对
+80 条 `human_confirmed_v1` 标注检查为 77 条无告警、3 条“中风险但事件为空”。
+
+## 37. 事件覆盖审计（2026-08-30）
+
+正式数据生成入口新增 `event_coverage`，分别统计 LoRA train、validation 和 INT4
+calibration 的六类事件，并报告代表性 warning。当前 64 条 LoRA 数据训练侧的覆盖为：
+
+| 事件 | train | validation | calibration |
+| --- | ---: | ---: | ---: |
+| `vru_near_maneuver_path` | 1 | 0 | 0 |
+| `vehicle_near_maneuver_path` | 12 | 3 | 8 |
+| `fixed_obstacle_near_path` | 0 | 1 | 1 |
+| `narrow_passage` | 11 | 3 | 7 |
+| `visibility_occlusion` | 3 | 3 | 4 |
+| `parking_space_conflict` | 0 | 0 | 0 |
+
+因此下一轮数据优先补充 `fixed_obstacle_near_path`、`vru_near_maneuver_path` 和
+`parking_space_conflict`，并确保新增样本的来源组不与现有 train、validation、calibration
+或冻结测试集重叠。在此之前不把新的训练/量化变体宣称为质量改进。

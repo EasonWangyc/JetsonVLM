@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from parksight_vlm.assessment import ParkingAssessment
+from parksight_vlm.assessment import ParkingAssessment, ParkingRiskEvent
 from parksight_vlm.workload import FrozenWorkload
 
 
@@ -103,6 +103,93 @@ def _calibration_text(workload: FrozenWorkload, assessment: ParkingAssessment) -
     )
 
 
+def _event_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        event
+        for record in records
+        for event in record["assessment"]["events"]
+    )
+    return {event.value: counts.get(event.value, 0) for event in ParkingRiskEvent}
+
+
+def audit_event_coverage(
+    *,
+    lora_records: list[dict[str, Any]],
+    calibration_records: list[dict[str, Any]],
+    recommended_min_train_support: int = 3,
+) -> dict[str, Any]:
+    """报告 train/validation/calibration 的事件覆盖，不改变数据拆分。"""
+    if recommended_min_train_support < 1:
+        raise ValueError("recommended_min_train_support must be at least 1")
+    train_records = [record for record in lora_records if record["split"] == "train"]
+    validation_records = [
+        record for record in lora_records if record["split"] == "validation"
+    ]
+    train_counts = _event_counts(train_records)
+    validation_counts = _event_counts(validation_records)
+    calibration_counts = _event_counts(calibration_records)
+    warnings: list[dict[str, Any]] = []
+    for event in ParkingRiskEvent:
+        event_name = event.value
+        train_count = train_counts[event_name]
+        validation_count = validation_counts[event_name]
+        calibration_count = calibration_counts[event_name]
+        if train_count == 0:
+            warnings.append({"type": "missing_from_train", "event": event_name})
+        elif train_count < recommended_min_train_support:
+            warnings.append(
+                {
+                    "type": "low_train_support",
+                    "event": event_name,
+                    "count": train_count,
+                    "recommended_minimum": recommended_min_train_support,
+                }
+            )
+        if validation_count > 0 and train_count == 0:
+            warnings.append(
+                {"type": "validation_not_seen_in_train", "event": event_name}
+            )
+        if calibration_count == 0:
+            warnings.append(
+                {"type": "missing_from_calibration", "event": event_name}
+            )
+    return {
+        "train": train_counts,
+        "validation": validation_counts,
+        "calibration": calibration_counts,
+        "recommended_min_train_support": recommended_min_train_support,
+        "warnings": warnings,
+    }
+
+
+def enforce_event_coverage(
+    coverage: dict[str, Any],
+    *,
+    min_train_event_support: int = 3,
+    require_validation_event_coverage: bool = True,
+    require_calibration_event_coverage: bool = True,
+) -> None:
+    """将 train/validation/calibration 的六类事件覆盖变为硬门禁。"""
+    if min_train_event_support < 1:
+        raise ValueError("min_train_event_support must be at least 1")
+    violations: list[str] = []
+    for event in ParkingRiskEvent:
+        event_name = event.value
+        train_count = coverage["train"].get(event_name, 0)
+        validation_count = coverage["validation"].get(event_name, 0)
+        calibration_count = coverage["calibration"].get(event_name, 0)
+        if train_count < min_train_event_support:
+            violations.append(
+                f"train:{event_name}={train_count}<{min_train_event_support}"
+            )
+        if require_validation_event_coverage and validation_count == 0:
+            violations.append(f"validation:{event_name}=0")
+        if require_calibration_event_coverage and calibration_count == 0:
+            violations.append(f"calibration:{event_name}=0")
+    if violations:
+        raise ValueError("event coverage gate failed: " + ", ".join(violations))
+
+
 def prepare_datasets(
     *,
     teacher_records: list[dict[str, Any]],
@@ -114,6 +201,8 @@ def prepare_datasets(
     workload: FrozenWorkload,
     label_source: str = "codex_visual_review_v1_single_pass",
     dataset_id: str = "ps80_reviewed_v1",
+    require_event_coverage: bool = False,
+    min_train_event_support: int = 3,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     """返回 LoRA、校准记录和审计摘要。"""
     if not label_source.strip():
@@ -218,6 +307,16 @@ def prepare_datasets(
         != set(record["weak_assessment"]["events"])
         for record in (*lora_records, *calibration_records)
     )
+    event_coverage = audit_event_coverage(
+        lora_records=lora_records,
+        calibration_records=calibration_records,
+        recommended_min_train_support=min_train_event_support,
+    )
+    if require_event_coverage:
+        enforce_event_coverage(
+            event_coverage,
+            min_train_event_support=min_train_event_support,
+        )
     summary = {
         "dataset_id": dataset_id,
         "label_source": label_source,
@@ -238,6 +337,8 @@ def prepare_datasets(
         },
         "lora_risk_level_counts": dict(sorted(risk_counts.items())),
         "lora_event_counts": dict(sorted(event_counts.items())),
+        "event_coverage": event_coverage,
+        "require_event_coverage": require_event_coverage,
         "workload_identity": workload.identity,
     }
     return lora_records, calibration_records, summary
@@ -273,6 +374,12 @@ def main() -> int:
         default="ps80_reviewed_v1",
         help="输出数据集的逻辑 identity，候选数据应使用显式 candidate 名称",
     )
+    parser.add_argument(
+        "--require-event-coverage",
+        action="store_true",
+        help="要求六类事件满足 train、validation、calibration 覆盖后才写出数据",
+    )
+    parser.add_argument("--min-train-event-support", type=int, default=3)
     args = parser.parse_args()
 
     teacher_records = _load_development_records(
@@ -293,6 +400,8 @@ def main() -> int:
         workload=workload,
         label_source=args.label_source,
         dataset_id=args.dataset_id,
+        require_event_coverage=args.require_event_coverage,
+        min_train_event_support=args.min_train_event_support,
     )
     _write_jsonl(args.lora_output, lora_records)
     _write_jsonl(args.calibration_output, calibration_records)

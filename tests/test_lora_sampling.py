@@ -4,6 +4,8 @@ import tempfile
 from pathlib import Path
 
 from scripts.finetune_qwen3_vl_lora import (
+    enforce_training_event_coverage,
+    _oversample_training_records,
     _oversample_non_low_records,
     _validate_label_provenance,
     validate_training_config,
@@ -16,6 +18,41 @@ WORKLOAD = PROJECT_ROOT / "configs" / "workloads" / "parking_risk_v1.json"
 
 
 class LoraSamplingTests(unittest.TestCase):
+    def test_event_coverage_gate_rejects_missing_event_support(self) -> None:
+        coverage = {
+            "train": {"narrow_passage": 3, "vehicle_near_maneuver_path": 2},
+            "validation": {"narrow_passage": 1, "vehicle_near_maneuver_path": 1},
+        }
+        with self.assertRaisesRegex(ValueError, "event coverage gate failed"):
+            enforce_training_event_coverage(coverage, min_train_event_support=3)
+
+    def test_event_coverage_gate_can_require_validation_support(self) -> None:
+        coverage = {
+            "train": {"narrow_passage": 3},
+            "validation": {"narrow_passage": 0},
+        }
+        with self.assertRaisesRegex(ValueError, "validation:narrow_passage=0"):
+            enforce_training_event_coverage(coverage, min_train_event_support=3)
+
+    def test_event_oversampling_increases_event_exposure(self) -> None:
+        no_event = {
+            "sample_id": "no-event",
+            "assessment": {"risk_level": "low", "events": []},
+        }
+        event = {
+            "sample_id": "event",
+            "assessment": {"risk_level": "medium", "events": ["narrow_passage"]},
+        }
+        result = _oversample_training_records([no_event, event], 2, 3)
+        self.assertEqual(
+            [record["sample_id"] for record in result],
+            ["no-event", "event", "event", "event"],
+        )
+
+    def test_event_oversampling_rejects_invalid_factor(self) -> None:
+        with self.assertRaisesRegex(ValueError, "event_oversampling_factor"):
+            _oversample_training_records([], 1, 0)
+
     def test_oversamples_only_non_low_records(self) -> None:
         low = {"sample_id": "low", "assessment": {"risk_level": "low"}}
         medium = {
@@ -109,6 +146,11 @@ class LoraSamplingTests(unittest.TestCase):
         self.assertEqual(result["sample_count"], 2)
         self.assertEqual(result["effective_train_samples"], 2)
         self.assertEqual(result["validation_samples"], 1)
+        self.assertEqual(result["event_coverage"]["train"]["narrow_passage"], 0)
+        self.assertIn(
+            {"type": "missing_from_train", "event": "narrow_passage"},
+            result["event_coverage"]["warnings"],
+        )
 
     def test_validate_training_config_rejects_candidate_before_cuda(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -23,6 +23,10 @@ manifest 记录必须且只能包含以下字段：
 
 annotation 记录必须且只能包含 `case_id` 与 `assessment`。`case_id` 必须与 manifest 一一对应；`assessment` 遵循 `ParkingAssessment` 的严格 JSON 契约。
 
+正式数据生成还会输出 train、validation 与 INT4 calibration 的六类事件覆盖审计。审计
+会标记训练集缺少某事件、训练样本支持不足、验证集出现训练阶段未见事件或 calibration
+缺少某事件；这些是数据代表性 warning，不会自动删除样本或改变来源组拆分。
+
 ```json
 {"case_id":"case-001","assessment":{"schema_version":"parking_risk_v1","risk_level":"medium","events":["narrow_passage"],"evidence":["Vehicles leave a narrow maneuvering corridor."],"driver_advice":["slow_down"]}}
 ```

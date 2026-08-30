@@ -7,6 +7,7 @@ import json
 import random
 import re
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 from parksight_vlm.assessment import ParkingAssessment
@@ -17,6 +18,14 @@ from parksight_vlm.workload import FrozenWorkload
 def source_group_id(image_path: Path) -> str:
     """从 PS2.0 文件名提取连续采集序列标识。"""
     return re.sub(r"[-_]\d+$", "", image_path.stem)
+
+
+def normalize_json_fences(raw_output: str) -> tuple[str, bool]:
+    """去除完整 JSON markdown 围栏；其他输出保持原样并交给严格解析。"""
+    match = re.fullmatch(r"\s*```(?:json)?\s*\n?(.*?)\n?```\s*", raw_output, re.IGNORECASE | re.DOTALL)
+    if match is None:
+        return raw_output, False
+    return match.group(1).strip(), True
 
 
 def select_group_disjoint_images(
@@ -59,9 +68,29 @@ def main() -> int:
     parser.add_argument("--train-count", type=int, default=64)
     parser.add_argument("--validation-count", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        help="候选生成时覆盖 workload 的输出上限，并写入新的 workload identity",
+    )
+    parser.add_argument(
+        "--normalize-json-fences",
+        action="store_true",
+        help="允许候选弱监督流程去除完整的 ```json ... ``` 围栏",
+    )
     args = parser.parse_args()
 
     workload = FrozenWorkload.load(args.workload)
+    if args.max_new_tokens is not None:
+        if args.max_new_tokens <= 0:
+            parser.error("--max-new-tokens must be positive")
+        workload = replace(
+            workload,
+            generation=replace(
+                workload.generation,
+                max_new_tokens=args.max_new_tokens,
+            ),
+        )
     selections = select_group_disjoint_images(
         args.image_root,
         train_count=args.train_count,
@@ -77,13 +106,21 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     written = 0
+    normalized_json_fences = 0
     failures: list[dict[str, str]] = []
     with args.output.open("w", encoding="utf-8", newline="\n") as handle:
         for index, (image_path, group_id, split) in enumerate(selections, start=1):
             generation = backend.generate(image_path=image_path, workload=workload)
+            parse_output = generation.raw_output
+            output_normalization = "none"
+            if args.normalize_json_fences:
+                parse_output, normalized = normalize_json_fences(parse_output)
+                if normalized:
+                    output_normalization = "stripped_json_fence"
+                    normalized_json_fences += 1
             try:
                 assessment = ParkingAssessment.from_mapping(
-                    json.loads(generation.raw_output)
+                    json.loads(parse_output)
                 )
             except Exception as error:
                 failures.append(
@@ -91,6 +128,7 @@ def main() -> int:
                         "image": image_path.name,
                         "error": f"{type(error).__name__}: {error}",
                         "raw_output": generation.raw_output,
+                        "output_normalization": output_normalization,
                     }
                 )
                 print(f"[{index}/{len(selections)}] invalid {image_path.name}: {error}")
@@ -104,6 +142,8 @@ def main() -> int:
                 "label_source": "qwen3_vl_2b_base_weak_supervision",
                 "model_revision": args.model_revision,
                 "workload_identity": workload.identity,
+                "raw_output": generation.raw_output,
+                "output_normalization": output_normalization,
                 "assessment": assessment.to_mapping(),
             }
             handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
@@ -122,6 +162,7 @@ def main() -> int:
                 "selected": len(selections),
                 "written": written,
                 "failed": len(failures),
+                "normalized_json_fences": normalized_json_fences,
                 "output": str(args.output),
                 "failures": str(failure_path),
             },

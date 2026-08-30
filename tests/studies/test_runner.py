@@ -109,7 +109,22 @@ class StudyRunnerTests(unittest.TestCase):
         self.assertEqual(report.quality_metrics.json_validity_rate, 0.5)
         self.assertEqual(report.quality_metrics.risk_level_accuracy, 0.5)
         self.assertAlmostEqual(report.quality_metrics.event_micro_f1, 2.0 / 3.0)
+        self.assertAlmostEqual(report.quality_metrics.event_macro_f1, 1.0 / 6.0)
+        self.assertEqual(
+            report.quality_metrics.event_metrics["narrow_passage"]["support"],
+            1,
+        )
+        self.assertEqual(
+            report.quality_metrics.event_metrics["narrow_passage"]["f1"],
+            1.0,
+        )
+        self.assertEqual(
+            report.quality_metrics.event_metrics["vru_near_maneuver_path"]["false_negative"],
+            1,
+        )
         self.assertEqual(report.quality_metrics.unsafe_advice_rate, 0.5)
+        self.assertEqual(report.quality_metrics.semantic_consistency_rate, 1.0)
+        self.assertEqual(report.quality_metrics.semantic_issue_counts, {})
         self.assertEqual(report.failure_summary, {"json_parse_error": 1})
         self.assertEqual(report.performance_metrics.successful_sample_count, 1)
         self.assertEqual(report.performance_metrics.tokens_per_second, 500.0)
@@ -153,6 +168,50 @@ class StudyRunnerTests(unittest.TestCase):
             StudyRunner().run(catalog, runtime, study)
 
         self.assertEqual(backend.call_count, 0)
+
+    def test_runner_reports_semantic_issue_without_rewriting_prediction(self) -> None:
+        reference = {
+            "schema_version": "parking_risk_v1",
+            "risk_level": "low",
+            "events": [],
+            "evidence": ["The maneuver path is visible and clear."],
+            "driver_advice": ["maintain_observation"],
+        }
+        predicted = dict(reference)
+        predicted["driver_advice"] = ["prepare_to_stop"]
+        catalog = ParkingCaseCatalog(
+            cases=(self._case("semantic-case", reference),),
+            manifest_path=Path("manifest.jsonl"),
+            annotations_path=Path("annotations.jsonl"),
+        )
+        runtime = TransformersRuntime(
+            data_root=FIXTURE_ROOT,
+            backend=SequenceBackend(
+                [RuntimeGeneration(raw_output=json.dumps(predicted))]
+            ),
+            backend_revision="test",
+            model_id="Qwen/Qwen3-VL-2B-Instruct",
+            model_revision="test-revision",
+        )
+        study = StudyDefinition(
+            study_id="semantic-audit-test",
+            workload=WORKLOAD,
+            split=DatasetSplit.TEST,
+            repetitions=1,
+            power_mode="test-mode",
+        )
+
+        report = StudyRunner().run(catalog, runtime, study)
+
+        self.assertEqual(report.quality_metrics.semantic_consistency_rate, 0.0)
+        self.assertEqual(
+            report.quality_metrics.semantic_issue_counts,
+            {"low_risk_with_prepare_to_stop": 1},
+        )
+        self.assertEqual(
+            report.records[0].assessment.driver_advice[0].value,
+            "prepare_to_stop",
+        )
 
     @staticmethod
     def _case(case_id: str, assessment: dict[str, object]) -> ParkingCase:

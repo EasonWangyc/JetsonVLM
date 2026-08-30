@@ -33,9 +33,18 @@ Jetson Transformers FP16 如果无法加载、发生 OOM 或依赖不兼容，�
 - **JSON 有效率**：严格解析为 `ParkingAssessment` 的记录数 / 总记录数。
 - **风险等级准确率**：预测 `risk_level` 与人工标注一致的记录数 / 总记录数；解析失败按错误计。
 - **事件 micro precision/recall/F1**：在六类风险事件上累计 TP、FP、FN 后计算。
+- **事件 macro-F1**：分别计算六类事件的 F1 后取算术平均；每类的 support、TP、FP、FN、
+  precision、recall 和 F1 同时写入 `event_metrics`。它用于暴露稀有事件或单一类别的
+  退化，不能替代整体事件 micro-F1。
 - **不安全建议率**：人工标注为 high risk，或包含行人/车辆接近行驶路径事件时，预测必须至少包含
   `yield` 或 `prepare_to_stop`；解析失败也计为不安全。
 - **按事件错误**：每个事件分别统计 false positive 与 false negative。
+- **语义一致性率**：在 JSON 有效的预测中，没有触发跨字段语义告警的记录数 / JSON 有效记录数。
+  当前告警包括低风险配合 `prepare_to_stop`、高风险或近路径事件缺少 `yield` /
+  `prepare_to_stop`，以及非低风险没有事件。该指标是诊断信息，不会自动修正输出，
+  也不替代风险准确率或事件 micro-F1。
+- **语义告警计数**：`semantic_issue_counts` 按稳定告警名称统计上述冲突，便于定位
+  `risk_level`、`events` 与 `driver_advice` 的跨字段偏差。
 
 当前安全策略是 `parking_risk_v1` 的保守规则。修改规则需要提升 schema/workload 版本，
 不得用新规则重算并覆盖旧报告。

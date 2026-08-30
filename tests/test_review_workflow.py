@@ -516,6 +516,7 @@ class ReviewWorkflowTests(unittest.TestCase):
 
         self.assertEqual(summary["sample_count"], 1)
         self.assertEqual(summary["reference_count"], 1)
+        self.assertEqual(summary["semantic_issue_counts"], {})
         self.assertTrue(summary["ready_for_review"])
         self.assertIn("data:image/jpeg;base64,ZmFrZS1qcGVn", document)
         self.assertIn("sample-1", document)
@@ -523,6 +524,11 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("review_decisions_batch.jsonl", document)
         self.assertIn("localStorage", document)
         self.assertIn("restoreDraft", document)
+        self.assertIn("事件覆盖（当前页面选择", document)
+        self.assertIn("data-split=\"train\"", document)
+        self.assertIn("id=\"split-filter\"", document)
+        self.assertIn("prepare_to_stop — 准备停车：存在明显近场障碍或路径冲突，应做好立即停车准备", document)
+        self.assertIn("请先判断 risk_level 和 events", document)
 
 
 if __name__ == "__main__":

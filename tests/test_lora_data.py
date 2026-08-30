@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from scripts.generate_lora_dataset import (
+    normalize_json_fences,
     select_group_disjoint_images,
     source_group_id,
 )
@@ -36,6 +37,17 @@ class LoraDatasetSelectionTests(unittest.TestCase):
         self.assertEqual(len(validation_groups), 2)
         self.assertTrue(train_groups.isdisjoint(validation_groups))
         self.assertEqual(source_group_id(Path("p2_img28_0408.jpg")), "p2_img28")
+
+    def test_normalizes_complete_json_fence_only(self) -> None:
+        raw = "```json\n{\"risk_level\": \"low\"}\n```"
+        normalized, changed = normalize_json_fences(raw)
+        self.assertTrue(changed)
+        self.assertEqual(normalized, '{"risk_level": "low"}')
+
+        raw_with_prefix = "model output:\n```json\n{}\n```"
+        normalized, changed = normalize_json_fences(raw_with_prefix)
+        self.assertFalse(changed)
+        self.assertEqual(normalized, raw_with_prefix)
 
 
 if __name__ == "__main__":

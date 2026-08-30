@@ -5,9 +5,12 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from parksight_vlm.assessment import ParkingAssessment
+from parksight_vlm.assessment import ParkingAssessment, ParkingRiskEvent
 from parksight_vlm.workload import FrozenWorkload
-from scripts.prepare_reviewed_lora_dataset import prepare_datasets
+from scripts.prepare_reviewed_lora_dataset import (
+    enforce_event_coverage,
+    prepare_datasets,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +20,16 @@ WORKLOAD = FrozenWorkload.load(
 
 
 class ReviewedLoraDataTests(unittest.TestCase):
+    def test_event_coverage_gate_rejects_missing_calibration_event(self) -> None:
+        coverage = {
+            "train": {event.value: 3 for event in ParkingRiskEvent},
+            "validation": {event.value: 1 for event in ParkingRiskEvent},
+            "calibration": {event.value: 1 for event in ParkingRiskEvent},
+        }
+        coverage["calibration"][ParkingRiskEvent.PARKING_SPACE_CONFLICT.value] = 0
+        with self.assertRaisesRegex(ValueError, "calibration:parking_space_conflict=0"):
+            enforce_event_coverage(coverage)
+
     def test_calibration_is_removed_from_supervised_splits(self) -> None:
         image_root = PROJECT_ROOT / "tests" / "fixtures" / "inference"
         teacher_records = []

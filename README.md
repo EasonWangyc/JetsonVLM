@@ -2,6 +2,9 @@
 
 <p>
   <img src="https://img.shields.io/badge/Built%20with-Codex-412991" alt="Built with Codex">
+<p>
+
+<P>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/Qwen3--VL-2B--Instruct-6E56CF" alt="Qwen3-VL 2B Instruct">
   <img src="https://img.shields.io/badge/TensorRT--Edge--LLM-v0.9.1-76B900" alt="TensorRT Edge-LLM v0.9.1">
@@ -59,6 +62,25 @@ TensorRT Edge-LLM 部署和可审计评测。
 - `evidence` 是与图片可见线索对应的简短说明，不是思维链。
 - `driver_advice` 是枚举式安全提示，不是车辆控制指令。
 
+### 结构化输出后的语义审计
+
+严格 JSON 解析通过后，评测还会运行非破坏性的跨字段审计，结果写入
+`StudyReport.quality_metrics`：
+
+- `semantic_consistency_rate`：JSON 有效 assessment 中没有发现已定义字段冲突的比例；
+- `semantic_issue_counts`：按告警类型统计风险等级、事件和驾驶建议之间的冲突。
+
+事件质量同时记录 `event_micro_f1` 和 `event_macro_f1`：前者将六类事件的 TP/FP/FN
+先累加后计算，反映总体事件识别；后者先按类别计算 F1 再平均，并通过
+`event_metrics` 保留每一类的 support、TP、FP、FN、precision、recall 和 F1，避免
+稀有事件被总体指标掩盖。
+
+当前规则将 `prepare_to_stop` 定义为“高风险、随时准备停车”，不是“准备泊入车位”。
+低风险配合该建议会产生告警；中风险可以包含该建议，不会被机械判为错误。高风险或
+行人/车辆近机动路径事件缺少 `yield` / `prepare_to_stop`，以及非低风险没有任何事件，
+也会被记录为告警。审计只提供可解释证据，不自动改写模型输出，也不改变既有 JSON、
+风险准确率或事件 micro-F1 的计算口径。
+
 ## 当前结论
 
 部署链路已经完成从模型、ONNX、TensorRT engine、Edge-LLM HTTP 服务到
@@ -68,11 +90,61 @@ TensorRT Edge-LLM 部署和可审计评测。
 - Edge-LLM Base FP16 的严格 JSON 有效率为 100%，风险等级准确率为 35%，事件 micro-F1 为 0.359。
 - 旧 LoRA 在 Jetson 上的事件 micro-F1 为 0.389，但输出 token 数更少，不能将其较低端到端延迟直接解释为 runtime 加速。
 - 旧通用校准 INT4 的端到端 p50 约 10.52 秒，但事件 micro-F1 退化为 0。
-- 最新 16 条领域校准数据生成的 INT4 engine 运行完成 20/20，但严格 JSON 有效率只有 20%，主要失败模式是 Markdown `json` 代码围栏。
-- 最新复核数据训练出的 LoRA adapter 在服务器冻结集上的风险准确率为 50%、事件 micro-F1 为 0.182；合并模型为 45% 和 0.100，尚未形成整体质量提升。
+- 人工确认后的 16 条 validation 已用于 `ps64_reviewed_v1` LoRA 训练；服务器 Transformers 结果为严格 JSON 100%、风险准确率 56.25%、事件 micro-F1 0.4286、不安全建议率 0%。
+- 当前 Jetson v1 INT4 在同一 16 条 validation 上为严格 JSON 100%、风险准确率 62.50%、事件 micro-F1 0.3000、不安全建议率 18.75%；它仍是事件识别参考版本。
+- 新增的校准口径对齐 v3 INT4 将校准文本切换为当前 v2 workload，Jetson 结果为严格 JSON 100%、风险准确率 68.75%、事件 micro-F1 0.1667、不安全建议率 0%，但逐样本表现出低风险/空事件偏置，且端到端 p50 上升到 8.60 秒，暂不作为最终部署版本。
 - 新增的 `parking_risk_v2_strict_json` 在保留 `parking_risk_v1` schema 的同时强化原始 JSON 边界；Jetson 领域 INT4 完整 20 样本 A/B 中，严格 JSON 有效率从 v1 的 20% 提升到 95%，但事件 micro-F1 仍为 0。
 
-因此，当前优先级是扩大并人工终审领域标注、修正 LoRA 数据偏置、分析量化后的格式退化，再进行新模型的 Jetson 复测。
+因此，当前优先级是保留 v1/v3 的可复现实验证据，继续针对风险事件漏检和跨字段驾驶建议一致性优化；任何新版本都必须在同一 workload、validation split 和指标口径下同时通过 JSON、风险、事件和安全性检查。
+数据生成摘要会分别记录 train、validation 和 calibration 的六类事件覆盖；LoRA 的
+`--validate-only` 会记录 train/validation 覆盖，并警告训练集缺失事件、训练支持不足
+或验证出现训练未见事件。这些 warning 不会篡改拆分，但会作为下一轮训练和量化是否
+具备代表性的门禁依据。
+
+### 人工确认数据后的 INT4 对照
+
+人工确认的 80 条开发数据已按来源组拆分为 48 条 LoRA train、16 条 validation 和 16 条
+独立 calibration。以下结果均使用 `parking_risk_v2_strict_json`、Qwen3-VL revision
+`89644892e4d85e24eaac8bacfd4f463576704203`、TensorRT Edge-LLM commit
+`7f061f21f0a581ba234a1e233c9315b89d8e47d6` 和 `i768/k1024`：
+
+| 版本 | 校准口径 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | Jetson p50 |
+|---|---|---:|---:|---:|---:|---:|
+| v1 INT4 | 旧 v1 文本校准 | 100% | 62.50% | 0.3000 | 18.75% | 7.84 s |
+| v2 INT4 | 语义 v2 LoRA、旧 v1 校准 | 87.50% | 56.25% | 0.1429 | 18.75% | 7.32 s |
+| v3 INT4 | 语义 v2 LoRA、语义 v2 校准 | 100% | 68.75% | 0.1667 | 0% | 8.60 s |
+| v5 INT4 | v1 LoRA、语义 v2 校准 | 100% | 62.50% | 0.2857 | 18.75% | 7.64 s |
+
+v3 的格式和风险等级结果更好，但事件召回率只有 10%，低风险样本中出现统一输出多个
+驾驶建议的偏置，因此当前不替换 v1。v5 只替换 calibration，事件 micro-F1 反而从 v1
+的 0.3000 降至 0.2857，说明 calibration 不是当前板端事件漏检的主要单一原因。v4 的
+事件重点采样在服务器 validation 上使风险准确率降至 37.50%、事件 micro-F1 降至
+0.3529，因此未进入 Jetson 量化。对应完整报告位于本地 `reports/` 忽略目录：
+`jetson_edgellm_int4_awq_ps64_reviewed_v1_validation_strict_json_i768_k1024.json`、
+`jetson_edgellm_int4_awq_ps64_reviewed_v2_semantic_validation_strict_json_i768_k1024.json`、
+`jetson_edgellm_int4_awq_ps64_reviewed_v3_calibration_aligned_validation_strict_json_i768_k1024.json`、
+`jetson_edgellm_int4_awq_ps64_reviewed_v1_v2_calibration_validation_strict_json_i768_k1024.json`。
+
+### 扩大 validation 的重训实验
+
+为检验小 validation 是否造成结果波动，保留原 calibration 16 条，将人工确认的 LoRA
+数据从 48 train / 16 validation 重划分为 32 train / 32 validation。重划分保持来源组隔离，
+并将原 validation 中唯一的 fixed obstacle 样本交换回 train；唯一的 VRU 样本继续保留在 train。
+新数据和配置分别位于 `data/processed/lora/ps64_reviewed_v2_validation32.jsonl`、
+`data/manifests/ps80_development_v2_validation32.jsonl` 和
+`configs/training/qwen3_vl_2b_lora_ps64_reviewed_v2_validation32.json`。
+
+本机 RTX 4060 上重新训练 3 个 epoch，唯一 train 样本 32 条，实际含 non-low oversampling
+后为 43 条，峰值 CUDA 显存 5.32 GiB。服务器 Transformers 在 32 条 validation 上的结果为：
+
+| 样本数 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 不安全建议率 | 端到端 p50 |
+|---:|---:|---:|---:|---:|---:|
+| 32 | 100% | 65.63% | 0.1905 | 18.75% | 4.41 s |
+
+该实验未进入新的量化流程。模型格式输出稳定，但事件预测几乎全部收缩为 `low + no_event`，
+说明在不增加标注数据的情况下单纯扩大 validation 会压缩 LoRA train 容量，不能作为质量改进方案；
+它保留为 validation 扩展、数据泄漏检查和工程回归证据。完整报告位于本地忽略目录
+`reports/server_transformers_lora_ps64_reviewed_v2_validation32_89644892.json`。
 
 ### 严格 JSON workload A/B
 
@@ -250,7 +322,7 @@ micro-F1        = 2 * precision * recall / (precision + recall)
 - 开发数据：`ps80_development_v1`，80 个独立来源组。
 - 复核数据拆分：48 条 LoRA train、16 条 validation、16 条独立 INT4 calibration。
 - 数据拆分按 `source_group_id` 隔离，避免同一视频或连续采集序列跨 split 泄漏。
-- 当前复核标注来源为 Codex 单轮视觉复核，不等同于人工双人金标。
+- 当前正式开发标注来源为 `human_confirmed_v1`；它来自 80 条人工确认/修正记录，仍属于单人复核数据，不等同于人工双人金标。
 - 基础模型 revision 固定为 `89644892e4d85e24eaac8bacfd4f463576704203`。
 - TensorRT Edge-LLM 固定 commit 为 `7f061f21f0a581ba234a1e233c9315b89d8e47d6`。
 
@@ -400,6 +472,62 @@ package。决策 JSONL 每行只包含 `case_id`、`review_status`、`human_asse
 
 生成的标准 annotation JSONL 再作为 `prepare_reviewed_lora_dataset.py` 的
 `--annotations` 输入。
+
+### 扩展样本的弱监督候选
+
+基础模型弱监督只用于扩大人工复核候选，不构成金标，也不能直接进入正式 LoRA 训练。
+当前已从未参与原 80 条样本的 86 个来源组中抽取代表图。原始 prompt 曾出现证据循环和
+截断；经过短证据、单一必要建议和禁止重复的弱监督 prompt 修正后，86 条均输出严格 JSON。
+候选生成支持显式去除完整 JSON markdown 围栏；正式运行时仍保持严格 JSON 解析：
+
+```powershell
+$env:PYTHONPATH = "src"
+& ".\.venv-train\Scripts\python.exe" scripts\generate_lora_dataset.py `
+  --image-root data\processed\lora\extended_source_images_v1 `
+  --workload configs\workloads\parking_risk_weak_supervision_v1.json `
+  --model models\Qwen3-VL-2B-Instruct-89644892 `
+  --model-revision 89644892e4d85e24eaac8bacfd4f463576704203 `
+  --output data\processed\lora\ps86_extended_codex_candidate_v2.jsonl `
+  --train-count 70 `
+  --validation-count 16 `
+  --seed 20260830 `
+  --normalize-json-fences
+```
+
+如果已保留完整的生成失败文件，也可以使用
+`scripts/replay_weak_supervision_failures.py` 离线重放原始输出；该脚本不会修改输入失败
+文件。
+
+当前 v2 候选仍全部为 `low + 空 events + maintain_observation`，说明格式质量改善不等于
+视觉判断质量改善。候选复核 package 和离线页面由下面的命令生成，必须逐图复核风险、
+事件、证据和驾驶建议：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\build_weak_supervision_review.py `
+  --candidate data\processed\lora\ps86_extended_codex_candidate_v2.jsonl `
+  --output-directory reports\label-review-20260830\ps86_extended_codex_v2
+& ".\.venv\Scripts\python.exe" scripts\build_review_html.py `
+  --error-review reports\label-review-20260830\ps86_extended_codex_v2\ps86_extended_codex_error_review_v1.json `
+  --image-root data\processed\lora\extended_source_images_v1 `
+  --output reports\label-review-20260830\ps86_extended_codex_v2\ps86_extended_codex_review.html
+```
+
+完成页面复核后，使用同目录下的 package 和决策模板接入现有
+`apply_review_decisions.py`；只有生成 `human_confirmed` annotation 并通过来源组和事件
+覆盖审计后，才允许作为下一轮训练数据。
+
+人工定稿后可用 `scripts/select_calibration_groups.py` 从 train 来源组中确定性选择 16 条
+INT4 calibration。工具优先覆盖尚未出现的事件，再覆盖风险等级；遇到任何未定稿记录会
+直接失败，避免把候选标签用于校准：
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\select_calibration_groups.py `
+  --package reports\label-review-20260830\ps86_extended_codex_v2\ps86_extended_codex_review_package_v2.jsonl `
+  --sample-count 16 `
+  --calibration-id ps16_int4_calibration_extended_v1 `
+  --source-dataset ps86_human_confirmed_v1 `
+  --output configs\data\ps16_int4_calibration_extended_v1.json
+```
 
 人工终审完成后，使用下面的正式数据生成命令；它将人工 annotation 写入训练与校准
 记录，并显式保留 `human_confirmed_v1` 来源。输出路径与正式 `ps64_reviewed_v1` 训练、
