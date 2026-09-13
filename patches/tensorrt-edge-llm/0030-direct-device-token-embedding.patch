@@ -1,0 +1,54 @@
+diff --git a/cpp/runtime/decoding/vanillaDecoder.cpp b/cpp/runtime/decoding/vanillaDecoder.cpp
+--- a/cpp/runtime/decoding/vanillaDecoder.cpp
++++ b/cpp/runtime/decoding/vanillaDecoder.cpp
+@@ -29,7 +29,8 @@
+ #include "sampler/sampling.h"
+ #include "kernels/kvCacheUtilKernels/kvCacheUtilsKernels.h"
+ 
+ #include <optional>
++#include <cstdlib>
+ #include <string>
+ #include <vector>
+ 
+@@ -39,6 +40,16 @@
+ namespace
+ {
+ constexpr int32_t kDecodeProfile{1};
+ 
++bool directDeviceTokenEmbeddingEnabled() noexcept
++{
++    static bool const enabled = []() noexcept {
++        char const* value = std::getenv("EDGELLM_DIRECT_DEVICE_TOKEN_EMBED");
++        return value != nullptr && value[0] == '1' && value[1] == '\0';
++    }();
++    return enabled;
++}
++
+ } // namespace
+@@ -58,7 +69,17 @@
+ 
+     int32_t const activeBatchSize = context.activeBatchSize;
+     check::check(mRuntime.preprocess.idsInput.reshape({activeBatchSize, 1}), "Tensor reshape failed");
+-    if (context.layerDebugger != nullptr)
++    bool const useDirectDeviceTokenEmbedding = directDeviceTokenEmbeddingEnabled()
++        && context.layerDebugger == nullptr && !mRuntime.preprocess.gemma4Ple;
++    if (useDirectDeviceTokenEmbedding)
++    {
++        auto const samplingShape = mRuntime.sampling.indices.getShape();
++        check::check(samplingShape.getNumDims() == 2 && samplingShape[0] == activeBatchSize && samplingShape[1] == 1,
++            "Sampling indices shape mismatch for direct device token embedding");
++    }
++    else if (context.layerDebugger != nullptr)
+     {
+         check::check(mRuntime.sampling.hostPackedTokenIds.reshape({activeBatchSize}), "Tensor reshape failed");
+         int32_t* hostPackedTokenIdsData = mRuntime.sampling.hostPackedTokenIds.dataPointer<int32_t>();
+@@ -82,8 +103,10 @@
+ 
+     check::check(
+         mRuntime.base.pipelineIO.inputsEmbeds.reshape({activeBatchSize, 1, mRuntime.deployment.base.hiddenSize}),
+         "Tensor reshape failed");
+-    kernel::embeddingLookup(mRuntime.preprocess.idsInput, mRuntime.preprocess.embedding.table,
++    auto const& tokenIdsForEmbedding
++        = useDirectDeviceTokenEmbedding ? mRuntime.sampling.indices : mRuntime.preprocess.idsInput;
++    kernel::embeddingLookup(tokenIdsForEmbedding, mRuntime.preprocess.embedding.table,
+         mRuntime.preprocess.embedding.scalesAsOptional(), mRuntime.base.pipelineIO.inputsEmbeds, context.stream);

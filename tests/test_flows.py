@@ -62,6 +62,180 @@ class ExternalFlowPlanTests(unittest.TestCase):
         self.assertIn("1024", build_command)
         self.assertNotIn("--enable-weight-streaming", build_command)
 
+    def test_loads_explicit_lm_head_quantization_candidate_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "quantize_qwen3_vl_2b_int4_awq_lm_head_candidate.json"
+        )
+        self.assertEqual(plan.stage, "quantize_model")
+        self.assertIn("--lm-head-quantization", plan.command)
+        self.assertIn("int4_awq", plan.command)
+        self.assertIn("lm_head_candidate", " ".join(plan.command))
+
+    def test_loads_lm_head_candidate_export_and_build_flows(self) -> None:
+        export_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "export_qwen3_vl_2b_int4_awq_lm_head_candidate.json"
+        )
+        build_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_lm_head_candidate_llm_i768_k1024.json"
+        )
+        self.assertEqual(export_plan.stage, "export_model")
+        self.assertNotIn("--reduced-vocab-dir", export_plan.command)
+        self.assertTrue(
+            any(path.name == "calibration_provenance.json" for path in export_plan.required_inputs)
+        )
+        self.assertEqual(build_plan.stage, "build_engine")
+        self.assertIn("--builder-optimization-level", build_plan.command)
+        self.assertIn("1", build_plan.command)
+        self.assertIn("1024", build_plan.command)
+        self.assertIn("--quantization-provenance", build_plan.command)
+        self.assertIn("--expected-lm-head-precision", build_plan.command)
+        self.assertIn("int4_awq", build_plan.command)
+        self.assertTrue(
+            any(path.name == "calibration_provenance.json" for path in build_plan.required_inputs)
+        )
+
+    def test_loads_lm_head_and_reduced_vocabulary_compound_candidate(self) -> None:
+        for size in ("32768", "65536"):
+            with self.subTest(size=size):
+                export_plan = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT
+                    / "configs"
+                    / "flows"
+                    / f"export_qwen3_vl_2b_int4_awq_lm_head_reduced_vocab{size}_history.json"
+                )
+                build_plan = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT
+                    / "configs"
+                    / "flows"
+                    / f"build_qwen3_vl_2b_int4_awq_lm_head_reduced_vocab{size}_history_llm_i768_k1024_opt1.json"
+                )
+
+                export_command = " ".join(export_plan.command)
+                build_command = " ".join(build_plan.command)
+                self.assertEqual(export_plan.stage, "export_model")
+                self.assertIn("lm_head_candidate", export_command)
+                self.assertIn("--reduced-vocab-dir", export_command)
+                self.assertIn(f"reduced_vocab{size}", export_command)
+                self.assertIn("plus_history", export_command)
+                self.assertTrue(
+                    any(path.name == "calibration_provenance.json" for path in export_plan.required_inputs)
+                )
+                self.assertTrue(
+                    any(path.name == "selection_report.json" for path in export_plan.required_inputs)
+                )
+
+                self.assertEqual(build_plan.stage, "build_engine")
+                self.assertIn("--reduced-vocab-coverage-report", build_command)
+                self.assertIn("--quantization-provenance", build_command)
+                self.assertIn("--expected-lm-head-precision int4_awq", build_command)
+                self.assertIn("--builder-optimization-level 1", build_command)
+                self.assertTrue(
+                    any(path.name == "calibration_provenance.json" for path in build_plan.required_inputs)
+                )
+                self.assertTrue(
+                    any(path.name == "selection_report.json" for path in build_plan.required_inputs)
+                )
+                self.assertTrue(
+                    any(
+                        path.name == f"reduced_vocab_{size}_ps20_character_coverage_plus_history.json"
+                        for path in build_plan.required_inputs
+                    )
+                )
+
+    def test_loads_reduced_vocabulary_export_and_build_flows(self) -> None:
+        export_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "export_qwen3_vl_2b_int4_awq_reduced_vocab65536.json"
+        )
+        build_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_reduced_vocab65536_llm_i768_k1024_opt1.json"
+        )
+        self.assertEqual(export_plan.stage, "export_model")
+        self.assertIn("--reduced-vocab-dir", export_plan.command)
+        self.assertTrue(
+            any(path.name == "vocab_map.safetensors" for path in export_plan.required_inputs)
+        )
+        self.assertTrue(
+            any(path.name == "selection_report.json" for path in export_plan.required_inputs)
+        )
+        self.assertEqual(build_plan.stage, "build_engine")
+        self.assertIn("--builder-optimization-level", build_plan.command)
+        self.assertIn("1", build_plan.command)
+        self.assertTrue(
+            any(path.name == "vocab_map.safetensors" for path in build_plan.required_inputs)
+        )
+        self.assertTrue(
+            any(path.name == "selection_report.json" for path in build_plan.required_inputs)
+        )
+        self.assertFalse(
+            any(
+                "/onnx/" in path.as_posix() and path.name == "selection_report.json"
+                for path in build_plan.required_inputs
+            )
+        )
+        self.assertIn("--reduced-vocab-coverage-report", build_plan.command)
+        self.assertTrue(
+            any(path.name == "reduced_vocab_65536_ps20_character_coverage.json" for path in build_plan.required_inputs)
+        )
+
+        smaller_export_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "export_qwen3_vl_2b_int4_awq_reduced_vocab32768.json"
+        )
+        smaller_build_plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_reduced_vocab32768_llm_i768_k1024_opt1.json"
+        )
+        self.assertIn("--reduced-vocab-dir", smaller_export_plan.command)
+        self.assertIn("32768", " ".join(smaller_export_plan.command))
+        self.assertIn("32768", " ".join(smaller_build_plan.command))
+        self.assertIn("--reduced-vocab-coverage-report", smaller_build_plan.command)
+
+        for size in ("32768", "65536"):
+            with self.subTest(size=size):
+                history_export = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT
+                    / "configs"
+                    / "flows"
+                    / f"export_qwen3_vl_2b_int4_awq_reduced_vocab{size}_history.json"
+                )
+                history_build = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT
+                    / "configs"
+                    / "flows"
+                    / f"build_qwen3_vl_2b_int4_awq_reduced_vocab{size}_history_llm_i768_k1024_opt1.json"
+                )
+                self.assertEqual(history_export.stage, "export_model")
+                self.assertEqual(history_build.stage, "build_engine")
+                self.assertIn("plus_history", " ".join(history_export.command))
+                self.assertIn("plus_history", " ".join(history_build.command))
+                self.assertIn(
+                    f"reduced_vocab_{size}_ps20_character_coverage_plus_history.json",
+                    " ".join(history_build.command),
+                )
+                self.assertIn(
+                    f"reduced_vocab_{size}_ps20_character_coverage_plus_history.json",
+                    " ".join(str(path) for path in history_build.required_inputs),
+                )
+
     def test_loads_executable_qwen3_vl_lora_flows(self) -> None:
         expected = {
             "train_qwen3_vl_2b_lora_ps80_v1.json": "train_lora",
@@ -79,6 +253,82 @@ class ExternalFlowPlanTests(unittest.TestCase):
                 )
                 self.assertEqual(plan.stage, stage)
                 self.assertNotIn("replace-with-", " ".join(plan.command))
+
+    def test_loads_dynamic_batch4_int4_engine_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_llm_i768_k1024_opt1_dynamic_batch4.json"
+        )
+        self.assertEqual(plan.stage, "build_engine")
+        command = " ".join(plan.command)
+        self.assertIn("--max-batch-size 4", command)
+        self.assertIn("--builder-optimization-level 1", command)
+        self.assertIn("--max-input-len 768", command)
+        self.assertIn("--max-kv-cache-capacity 1024", command)
+        self.assertTrue(any("dynamic_batch4" in path.as_posix() for path in plan.expected_outputs))
+
+    def test_loads_paged_kv_candidate_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_llm_i768_k1024_opt1_paged_kv.json"
+        )
+        self.assertEqual(plan.stage, "build_engine")
+        command = " ".join(plan.command)
+        self.assertIn("--max-kv-pool-pages 16", command)
+        self.assertIn("--verify-paged-kv-source", command)
+        self.assertIn("--max-batch-size 1", command)
+        self.assertIn("--builder-optimization-level 1", command)
+        self.assertTrue(any("paged_kv" in path.as_posix() for path in plan.expected_outputs))
+
+    def test_loads_dynamic_batch_paged_kv_candidate_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_llm_i768_k1024_opt1_dynamic_batch4_paged_kv.json"
+        )
+        command = " ".join(plan.command)
+        self.assertIn("--max-batch-size 4", command)
+        self.assertIn("--max-kv-pool-pages 64", command)
+        self.assertIn("--verify-paged-kv-source", command)
+        self.assertIn("--builder-optimization-level 1", command)
+        self.assertTrue(any("dynamic_batch4_paged_kv" in path.as_posix() for path in plan.expected_outputs))
+
+    def test_loads_visual_builder_level_candidates(self) -> None:
+        for level in ("2", "3"):
+            with self.subTest(level=level):
+                plan = ExternalFlowPlan.load(
+                    REPOSITORY_ROOT
+                    / "configs"
+                    / "flows"
+                    / f"build_qwen3_vl_2b_fp16_visual_engine_opt{level}.json"
+                )
+                command = " ".join(plan.command)
+                self.assertEqual(plan.stage, "build_engine")
+                self.assertIn("--component visual", command)
+                self.assertIn(f"--builder-optimization-level {level}", command)
+                self.assertIn("--workspace-limit-mib 1024", command)
+                self.assertTrue(any("visual_opt" + level in path.as_posix() for path in plan.expected_outputs))
+
+    def test_loads_reduced_vocab_dynamic_batch4_compound_flow(self) -> None:
+        plan = ExternalFlowPlan.load(
+            REPOSITORY_ROOT
+            / "configs"
+            / "flows"
+            / "build_qwen3_vl_2b_int4_awq_reduced_vocab65536_history_llm_i768_k1024_opt1_dynamic_batch4.json"
+        )
+        self.assertEqual(plan.stage, "build_engine")
+        command = " ".join(plan.command)
+        self.assertIn("--max-batch-size 4", command)
+        self.assertIn("--reduced-vocab-dir", command)
+        self.assertIn("--reduced-vocab-required-token-id 151645", command)
+        self.assertIn("--reduced-vocab-required-token-id 151643", command)
+        self.assertIn("plus_history", command)
+        self.assertTrue(any("dynamic_batch4" in path.as_posix() for path in plan.expected_outputs))
 
     def test_loads_explicit_codex_candidate_training_flow(self) -> None:
         plan = ExternalFlowPlan.load(

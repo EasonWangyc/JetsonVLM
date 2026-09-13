@@ -1,0 +1,129 @@
+diff --git a/cpp/runtime/exec/tensorRegistry.h b/cpp/runtime/exec/tensorRegistry.h
+--- a/cpp/runtime/exec/tensorRegistry.h
++++ b/cpp/runtime/exec/tensorRegistry.h
+@@ -24,0 +25,1 @@
++#include <unordered_map>
+@@ -66,3 +66,14 @@
+ class TensorRegistry
+ {
+ public:
++    //! Host-side state for one TensorRT execution context. The cache is optional;
++    //! a null pointer preserves the original bind-every-call behavior.
++    struct BindingState
++    {
++        uintptr_t address{0};
++        nvinfer1::Dims shape{};
++        bool addressValid{false};
++        bool shapeValid{false};
++    };
++
++    using BindingCache = std::unordered_map<std::string, BindingState>;
++
++    static bool dimsEqual(nvinfer1::Dims const& lhs, nvinfer1::Dims const& rhs) noexcept;
+@@ -86,1 +97,2 @@
+     bool bindAll(
+-        nvinfer1::IExecutionContext* ctx, TensorMap const& tensorMap, InferenceDims const& inferenceDims) const;
++        nvinfer1::IExecutionContext* ctx, TensorMap const& tensorMap, InferenceDims const& inferenceDims,
++        BindingCache* cache = nullptr) const;
+diff --git a/cpp/runtime/exec/tensorRegistry.cpp b/cpp/runtime/exec/tensorRegistry.cpp
+--- a/cpp/runtime/exec/tensorRegistry.cpp
++++ b/cpp/runtime/exec/tensorRegistry.cpp
+@@ -133,0 +134,13 @@
++bool TensorRegistry::dimsEqual(nvinfer1::Dims const& lhs, nvinfer1::Dims const& rhs) noexcept
++{
++    if (lhs.nbDims != rhs.nbDims)
++    {
++        return false;
++    }
++    for (int32_t i = 0; i < lhs.nbDims; ++i)
++    {
++        if (lhs.d[i] != rhs.d[i])
++        {
++            return false;
++        }
++    }
++    return true;
++}
+ 
+@@ -135,1 +135,2 @@
+ bool TensorRegistry::bindAll(
+-    nvinfer1::IExecutionContext* ctx, TensorMap const& tensorMap, InferenceDims const& inferenceDims) const
++    nvinfer1::IExecutionContext* ctx, TensorMap const& tensorMap, InferenceDims const& inferenceDims,
++    BindingCache* cache) const
+@@ -147,1 +148,18 @@
+-        if (!ctx->setTensorAddress(spec.name.c_str(), tensor->rawPointer()))
++        BindingState* cachedState = cache != nullptr ? &(*cache)[spec.name] : nullptr;
++        uintptr_t const address = reinterpret_cast<uintptr_t>(tensor->rawPointer());
++        if (cachedState == nullptr || !cachedState->addressValid || cachedState->address != address)
+         {
+-            LOG_ERROR("setTensorAddress failed for '%s'", spec.name.c_str());
+-            success = false;
+-            continue;
++            if (!ctx->setTensorAddress(spec.name.c_str(), tensor->rawPointer()))
++            {
++                LOG_ERROR("setTensorAddress failed for '%s'", spec.name.c_str());
++                success = false;
++                continue;
++            }
++            if (cachedState != nullptr)
++            {
++                cachedState->address = address;
++                cachedState->addressValid = true;
++            }
+@@ -158,1 +175,15 @@
+-            if (!ctx->setInputShape(spec.name.c_str(), dims))
++            if (cachedState == nullptr || !cachedState->shapeValid || !dimsEqual(cachedState->shape, dims))
+             {
+-                LOG_ERROR("setInputShape failed for '%s'", spec.name.c_str());
+-                success = false;
++                if (!ctx->setInputShape(spec.name.c_str(), dims))
++                {
++                    LOG_ERROR("setInputShape failed for '%s'", spec.name.c_str());
++                    success = false;
++                }
++                else if (cachedState != nullptr)
++                {
++                    cachedState->shape = dims;
++                    cachedState->shapeValid = true;
++                }
+             }
+diff --git a/cpp/runtime/exec/engineExecutor.h b/cpp/runtime/exec/engineExecutor.h
+--- a/cpp/runtime/exec/engineExecutor.h
++++ b/cpp/runtime/exec/engineExecutor.h
+@@ -177,0 +178,7 @@
++    bool mCacheRegisteredBindings{false};
++    //! Cache is partitioned by context and optimization profile. Pinned
++    //! contexts keep their profile-local state; a shared context invalidates
++    //! its cache when TensorRT changes optimization profiles.
++    std::unordered_map<nvinfer1::IExecutionContext*,
++        std::unordered_map<int32_t, TensorRegistry::BindingCache>> mRegisteredBindingCaches;
++
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -106,2 +106,10 @@
+     registerOptionalTreeMetadata(binding_names::kTreeParentIds);
+     registerOptionalTreeMetadata(binding_names::kTreeDepths);
++    char const* cacheRegisteredBindings = std::getenv("EDGELLM_CACHE_REGISTERED_BINDINGS");
++    mCacheRegisteredBindings
++        = cacheRegisteredBindings != nullptr && std::string_view{cacheRegisteredBindings} == "1";
++    if (mCacheRegisteredBindings)
++    {
++        LOG_INFO("registered binding cache enabled; callers must update bindings through prepare()");
++    }
++
+@@ -269,1 +277,6 @@
+-    if (!mRegistry.bindAll(mContext, map, dims))
++    TensorRegistry::BindingCache* bindingCache = nullptr;
++    if (mCacheRegisteredBindings)
++    {
++        auto& contextCaches = mRegisteredBindingCaches[mContext];
++        if (!mPinOptimizationProfiles && mActiveProfileIndex != profileIndex)
++        {
++            // TensorRT may invalidate dynamic shapes/bindings on a profile
++            // transition when one context is shared by multiple profiles.
++            contextCaches.clear();
++        }
++        bindingCache = &contextCaches[profileIndex];
++    }
++    if (!mRegistry.bindAll(mContext, map, dims, bindingCache))

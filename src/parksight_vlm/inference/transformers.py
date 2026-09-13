@@ -89,13 +89,22 @@ class HuggingFaceQwen3VlBackend:
             if self._profile_stages
             else None
         )
+        first_token_probe = (
+            _FirstTokenTimingProbe(self._torch, generation_start=generate_start)
+            if self._profile_stages
+            else None
+        )
         profile_context = profiler if profiler is not None else nullcontext()
         with self._torch.inference_mode(), profile_context: # 纯推理，不计算梯度也不保存反向传播状态
-            generated_ids = self._model.generate(
-                **inputs,
-                max_new_tokens=workload.generation.max_new_tokens,
-                do_sample=workload.generation.do_sample,
-            )
+            generate_kwargs: dict[str, Any] = {
+                "max_new_tokens": workload.generation.max_new_tokens,
+                "do_sample": workload.generation.do_sample,
+            }
+            if first_token_probe is not None:
+                # LogitsProcessor 在首个 LM forward 完成、首 token 被选出之前运行。
+                # 这比用完整响应返回时间近似 TTFT 更接近真实首 token 时刻。
+                generate_kwargs["logits_processor"] = [first_token_probe]
+            generated_ids = self._model.generate(**inputs, **generate_kwargs)
         model_generate_ms = (time.perf_counter() - generate_start) * 1000.0
         generated_ids_trimmed = [
             output_ids[len(input_ids) :] # 清除输入prompt对应token
@@ -121,6 +130,11 @@ class HuggingFaceQwen3VlBackend:
                 model_generate_ms=model_generate_ms,
                 prefill_ms=profiler.prefill_ms if profiler is not None else None,
                 decode_ms=profiler.decode_ms if profiler is not None else None,
+                time_to_first_token_ms=(
+                    first_token_probe.elapsed_ms
+                    if first_token_probe is not None
+                    else None
+                ),
             ),
             resource_snapshot=ResourceSnapshot(peak_memory_mb=peak_memory_mb),
             output_tokens=output_tokens,
@@ -216,7 +230,11 @@ class _ForwardPhaseProfiler:
     记为 decode；找不到对应模块时保留 ``None``，不伪造阶段数据。
     """
 
-    def __init__(self, model: Any, torch_module: Any) -> None:
+    def __init__(
+        self,
+        model: Any,
+        torch_module: Any,
+    ) -> None:
         self._torch = torch_module
         self._handles: list[Any] = []
         self._starts: dict[str, float] = {}
@@ -267,6 +285,23 @@ class _ForwardPhaseProfiler:
     @property
     def decode_ms(self) -> float | None:
         return sum(self._language_calls[1:]) if len(self._language_calls) > 1 else None
+
+
+class _FirstTokenTimingProbe:
+    """在首个 logits 可用时记录近似 TTFT。"""
+
+    def __init__(self, torch_module: Any, *, generation_start: float) -> None:
+        self._torch = torch_module
+        self._generation_start = generation_start
+        self.elapsed_ms: float | None = None
+
+    def __call__(self, input_ids: Any, scores: Any) -> Any:
+        del input_ids
+        if self.elapsed_ms is None:
+            if self._torch.cuda.is_available():
+                self._torch.cuda.synchronize()
+            self.elapsed_ms = (time.perf_counter() - self._generation_start) * 1000.0
+        return scores
 
 
 def _find_profile_module(modules: dict[str, Any], leaf_name: str) -> Any | None:

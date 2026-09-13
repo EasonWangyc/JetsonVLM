@@ -1,0 +1,135 @@
+diff --git a/cpp/sampler/sampling.cu b/cpp/sampler/sampling.cu
+--- a/cpp/sampler/sampling.cu
++++ b/cpp/sampler/sampling.cu
+@@ -349,0 +350,66 @@
++
++// Candidate greedy path: reduce one argmax per warp, then reduce the warp
++// winners in the first warp. The CUB path remains the default control.
++template <int BLOCK_SIZE>
++__global__ void greedyTop1WarpKernel(
++    float const* __restrict__ input, int32_t* __restrict__ output, int32_t batchSize, int32_t vocabSize,
++    int32_t const* __restrict__ reducedVocabMapping)
++{
++    int32_t const batchIdx = static_cast<int32_t>(blockIdx.x);
++    if (batchIdx >= batchSize)
++    {
++        return;
++    }
++
++    constexpr int32_t WARP_SIZE = 32;
++    constexpr int32_t WARP_COUNT = BLOCK_SIZE / WARP_SIZE;
++    __shared__ float warpValues[WARP_COUNT];
++    __shared__ int32_t warpIndices[WARP_COUNT];
++
++    float bestValue = -FLT_MAX;
++    int32_t bestIndex = -1;
++    int32_t const rowOffset = batchIdx * vocabSize;
++    for (int32_t index = static_cast<int32_t>(threadIdx.x); index < vocabSize; index += BLOCK_SIZE)
++    {
++        float const value = input[rowOffset + index];
++        // Match TopK_2::insert: keep the first local maximum and ignore NaN.
++        if (value > bestValue)
++        {
++            bestValue = value;
++            bestIndex = index;
++        }
++    }
++
++    int32_t const lane = static_cast<int32_t>(threadIdx.x) & (WARP_SIZE - 1);
++    int32_t const warp = static_cast<int32_t>(threadIdx.x) / WARP_SIZE;
++    for (int32_t offset = WARP_SIZE / 2; offset > 0; offset >>= 1)
++    {
++        float const otherValue = __shfl_down_sync(0xffffffffu, bestValue, offset);
++        int32_t const otherIndex = __shfl_down_sync(0xffffffffu, bestIndex, offset);
++        if (!(bestValue > otherValue))
++        {
++            bestValue = otherValue;
++            bestIndex = otherIndex;
++        }
++    }
++
++    if (lane == 0)
++    {
++        warpValues[warp] = bestValue;
++        warpIndices[warp] = bestIndex;
++    }
++    __syncthreads();
++
++    if (warp == 0)
++    {
++        if (lane < WARP_COUNT)
++        {
++            bestValue = warpValues[lane];
++            bestIndex = warpIndices[lane];
++        }
++        else
++        {
++            bestValue = -FLT_MAX;
++            bestIndex = -1;
++        }
++
++        for (int32_t offset = WARP_SIZE / 2; offset > 0; offset >>= 1)
++        {
++            float const otherValue = __shfl_down_sync(0xffffffffu, bestValue, offset);
++            int32_t const otherIndex = __shfl_down_sync(0xffffffffu, bestIndex, offset);
++            if (lane < WARP_COUNT && lane + offset < WARP_COUNT && !(bestValue > otherValue))
++            {
++                bestValue = otherValue;
++                bestIndex = otherIndex;
++            }
++        }
++
++        if (lane == 0)
++        {
++            int32_t const reducedIndex = bestIndex >= 0 ? bestIndex : vocabSize - 1;
++            output[batchIdx] = reducedVocabMapping != nullptr ? reducedVocabMapping[reducedIndex] : reducedIndex;
++        }
++    }
++}
++
+@@ -1139,13 +1139,34 @@
+-        if (greedyBlockSize == 1024)
+-        {
+-            greedyTop1Kernel<1024><<<batchSize, 1024, 0, stream>>>(
+-                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
+-                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
+-        }
+-        else
+-        {
+-            greedyTop1Kernel<256><<<batchSize, 256, 0, stream>>>(
+-                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
+-                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
+-        }
++        static bool const useWarpGreedy = []() noexcept {
++            char const* value = std::getenv("EDGELLM_GREEDY_ARGMAX_IMPL");
++            return value != nullptr && value[0] == 'w' && value[1] == 'a' && value[2] == 'r' && value[3] == 'p'
++                && value[4] == '\0';
++        }();
++        if (useWarpGreedy)
++        {
++            if (greedyBlockSize == 1024)
++            {
++                greedyTop1WarpKernel<1024><<<batchSize, 1024, 0, stream>>>(
++                    input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                    reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++            }
++            else
++            {
++                greedyTop1WarpKernel<256><<<batchSize, 256, 0, stream>>>(
++                    input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                    reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++            }
++        }
++        else if (greedyBlockSize == 1024)
++        {
++            greedyTop1Kernel<1024><<<batchSize, 1024, 0, stream>>>(
++                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++        }
++        else
++        {
++            greedyTop1Kernel<256><<<batchSize, 256, 0, stream>>>(
++                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++        }
+         return;

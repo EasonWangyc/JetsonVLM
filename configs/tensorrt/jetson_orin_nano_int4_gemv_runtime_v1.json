@@ -1,0 +1,73 @@
+{
+  "schema_version": "parksight_tensorrt_runtime_tuning_v1",
+  "experiment_id": "jetson_orin_nano_int4_gemv_runtime_v1",
+  "fixed": {
+    "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+    "edge_llm_revision": "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+    "platform": "Jetson Orin Nano 8GB",
+    "power_mode": "15W_MODE_0",
+    "precision": "int4_awq",
+    "max_batch_size": 1,
+    "max_input_len": 768,
+    "max_kv_cache_capacity": 1024,
+    "cuda_graph_mode": "enabled"
+  },
+  "variants": [
+    {
+      "variant_id": "control_n2_block256",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false,
+      "int4_gemv_n_per_block": 2,
+      "int4_gemv_block_size": 256,
+      "runtime_patches": [
+        "patches/tensorrt-edge-llm/0038-int4-gemv-nperblock4.patch",
+        "patches/tensorrt-edge-llm/0049-int4-gemv-block-size-candidate-v2.patch"
+      ]
+    },
+    {
+      "variant_id": "block128_n2",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false,
+      "int4_gemv_n_per_block": 2,
+      "int4_gemv_block_size": 128,
+      "runtime_patches": [
+        "patches/tensorrt-edge-llm/0038-int4-gemv-nperblock4.patch",
+        "patches/tensorrt-edge-llm/0049-int4-gemv-block-size-candidate-v2.patch"
+      ]
+    },
+    {
+      "variant_id": "block512_n2",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false,
+      "int4_gemv_n_per_block": 2,
+      "int4_gemv_block_size": 512,
+      "runtime_patches": [
+        "patches/tensorrt-edge-llm/0038-int4-gemv-nperblock4.patch",
+        "patches/tensorrt-edge-llm/0049-int4-gemv-block-size-candidate-v2.patch"
+      ]
+    },
+    {
+      "variant_id": "n4_block256",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false,
+      "int4_gemv_n_per_block": 4,
+      "int4_gemv_block_size": 256,
+      "runtime_patches": [
+        "patches/tensorrt-edge-llm/0038-int4-gemv-nperblock4.patch",
+        "patches/tensorrt-edge-llm/0049-int4-gemv-block-size-candidate-v2.patch"
+      ]
+    }
+  ]
+}

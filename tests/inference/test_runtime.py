@@ -21,6 +21,7 @@ from parksight_vlm.inference import (
     TransformersRuntime,
 )
 from parksight_vlm.inference.transformers import (
+    _FirstTokenTimingProbe,
     _ForwardPhaseProfiler,
     _find_profile_module,
     _require_cuda_architecture,
@@ -105,6 +106,24 @@ class RuntimeTests(unittest.TestCase):
             _find_profile_module(dict(model.named_modules()), "visual"),
             model.visual,
         )
+
+    def test_first_token_probe_records_first_logits_timestamp(self) -> None:
+        class Cuda:
+            @staticmethod
+            def is_available() -> bool:
+                return False
+
+        class Torch:
+            cuda = Cuda()
+
+        probe = _FirstTokenTimingProbe(Torch(), generation_start=0.0)
+        scores = object()
+
+        self.assertIs(probe(object(), scores), scores)
+        self.assertIsNotNone(probe.elapsed_ms)
+        first_elapsed_ms = probe.elapsed_ms
+        probe(object(), object())
+        self.assertEqual(probe.elapsed_ms, first_elapsed_ms)
 
     def test_qwen3_vl_messages_use_typed_content_items(self) -> None:
         image = object()
@@ -245,6 +264,12 @@ class RuntimeTests(unittest.TestCase):
                             {"message": {"content": json.dumps(self_payload)}}
                         ],
                         "usage": {"completion_tokens": 19},
+                        "timings_ms": {
+                            "prefill_ms": 120,
+                            "ttft_ms": 180,
+                            "decode_ms": 400,
+                            "server_e2e_ms": 650,
+                        },
                     }
                 ).encode("utf-8")
 
@@ -277,6 +302,153 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(text_item["type"], "text")
         self.assertEqual(text_item["text"], WORKLOAD.render_user_prompt())
         self.assertEqual(generation.output_tokens, 19)
+        self.assertIsNotNone(generation.stage_timings.preprocess_ms)
+        self.assertIsNotNone(generation.stage_timings.http_round_trip_ms)
+        self.assertEqual(generation.stage_timings.prefill_ms, 120.0)
+        self.assertEqual(generation.stage_timings.time_to_first_token_ms, 180.0)
+        self.assertEqual(generation.stage_timings.decode_ms, 400.0)
+        self.assertEqual(generation.stage_timings.backend_end_to_end_ms, 650.0)
+        self.assertEqual(json.loads(generation.raw_output), self_payload)
+
+    def test_edge_llm_http_backend_rejects_invalid_server_timing(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "non-negative"):
+            EdgeLlmHttpBackend.parse_server_timings(
+                {"timings_ms": {"decode_ms": -1}}
+            )
+
+    def test_edge_llm_http_backend_validates_base_url(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"absolute http\(s\) URL"):
+            EdgeLlmHttpBackend(base_url="127.0.0.1:8000")
+
+    def test_edge_llm_http_backend_persistent_connection_uses_http_client(self) -> None:
+        from unittest.mock import patch
+
+        class FakeResponse:
+            status = 200
+            headers = {"content-type": "application/json"}
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return (
+                    b'{"choices":[{"message":{"content":"{}"}}],'
+                    b'"usage":{"completion_tokens":1}}'
+                )
+
+        class FakeConnection:
+            instances: list["FakeConnection"] = []
+
+            def __init__(self, host: str, *, timeout: float) -> None:
+                self.host = host
+                self.timeout = timeout
+                self.requests: list[dict[str, object]] = []
+                self.closed = False
+                self.instances.append(self)
+
+            def request(self, method: str, path: str, *, body: bytes, headers: dict[str, str]) -> None:
+                self.requests.append(
+                    {"method": method, "path": path, "body": body, "headers": headers}
+                )
+
+            def getresponse(self) -> FakeResponse:
+                return FakeResponse()
+
+            def close(self) -> None:
+                self.closed = True
+
+        workload = WORKLOAD
+        image_path = Path("image.jpg")
+        backend = EdgeLlmHttpBackend(
+            base_url="http://127.0.0.1:8000",
+            stream_responses=False,
+            reuse_http_connection=True,
+        )
+        with patch(
+            "parksight_vlm.inference.edge_llm.http.client.HTTPConnection",
+            FakeConnection,
+        ):
+            backend.generate(image_path=image_path, workload=workload)
+            backend.generate(image_path=image_path, workload=workload)
+
+        self.assertEqual(len(FakeConnection.instances), 1)
+        self.assertEqual(len(FakeConnection.instances[0].requests), 2)
+        self.assertEqual(
+            FakeConnection.instances[0].requests[0]["path"],
+            "/v1/chat/completions",
+        )
+        self.assertEqual(
+            FakeConnection.instances[0].requests[0]["headers"]["Connection"],
+            "keep-alive",
+        )
+
+    def test_edge_llm_http_backend_measures_ttft_from_first_stream_delta(self) -> None:
+        self_payload = self._assessment_payload()
+        raw_payload = json.dumps(self_payload)
+
+        class FakeHeaders:
+            @staticmethod
+            def get_content_type() -> str:
+                return "text/event-stream"
+
+        class FakeResponse:
+            headers = FakeHeaders()
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def __iter__(self):
+                events = [
+                    {"choices": [{"delta": {"role": "assistant"}}]},
+                    {"choices": [{"delta": {"content": raw_payload[:12]}}]},
+                    {"choices": [{"delta": {"content": raw_payload[12:]}}]},
+                    {
+                        "choices": [],
+                        "usage": {"completion_tokens": 19},
+                        "timings_ms": {
+                            "prefill_ms": 120,
+                            "decode_ms": 400,
+                            "server_e2e_ms": 650,
+                        },
+                    },
+                ]
+                for event in events:
+                    encoded = ("data: " + json.dumps(event) + "\n\n").encode("utf-8")
+                    split_at = max(1, len(encoded) // 2)
+                    yield encoded[:split_at]
+                    yield encoded[split_at:]
+                yield b"data: [DONE]\n\n"
+
+        backend = EdgeLlmHttpBackend(base_url="http://127.0.0.1:8000")
+        with (
+            patch(
+                "parksight_vlm.inference.edge_llm.urlopen",
+                return_value=FakeResponse(),
+            ) as mocked_urlopen,
+            patch(
+                "parksight_vlm.inference.edge_llm.time.perf_counter",
+                side_effect=[0.0, 0.0, 10.0, 11.0, 20.0],
+            ),
+        ):
+            generation = backend.generate(
+                image_path=FIXTURE_ROOT / "scene.jpg",
+                workload=WORKLOAD,
+            )
+
+        request_payload = json.loads(mocked_urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertTrue(request_payload["stream"])
+        self.assertEqual(generation.output_tokens, 19)
+        self.assertEqual(generation.stage_timings.time_to_first_token_ms, 1000.0)
+        self.assertEqual(generation.stage_timings.http_round_trip_ms, 10000.0)
+        self.assertEqual(generation.stage_timings.prefill_ms, 120.0)
+        self.assertEqual(generation.stage_timings.decode_ms, 400.0)
+        self.assertEqual(generation.stage_timings.backend_end_to_end_ms, 650.0)
         self.assertEqual(json.loads(generation.raw_output), self_payload)
 
     @staticmethod

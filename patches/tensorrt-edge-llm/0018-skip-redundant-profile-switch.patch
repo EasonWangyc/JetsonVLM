@@ -1,0 +1,26 @@
+diff --git a/cpp/runtime/exec/engineExecutor.h b/cpp/runtime/exec/engineExecutor.h
+--- a/cpp/runtime/exec/engineExecutor.h
++++ b/cpp/runtime/exec/engineExecutor.h
+@@ -196,2 +196,4 @@
+     bool mPinOptimizationProfiles{false};
++    bool mSkipRedundantProfileSwitch{false};
+     int32_t mActiveProfileIndex{0};
++    bool mHasActiveProfile{false};
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -115,0 +116,8 @@
++    char const* skipRedundantProfileSwitch = std::getenv("EDGELLM_SKIP_REDUNDANT_PROFILE_SWITCH");
++    mSkipRedundantProfileSwitch
++        = skipRedundantProfileSwitch != nullptr && std::string_view{skipRedundantProfileSwitch} == "1";
++    if (mSkipRedundantProfileSwitch)
++    {
++        LOG_INFO("redundant same-profile setOptimizationProfileAsync calls will be skipped");
++    }
++
+@@ -253,1 +261,1 @@
+-    else
++    else if (!mSkipRedundantProfileSwitch || !mHasActiveProfile || mActiveProfileIndex != profileIndex)
+@@ -275,1 +283,2 @@
+     mActiveProfileIndex = profileIndex;
++    mHasActiveProfile = true;

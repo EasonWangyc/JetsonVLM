@@ -1,0 +1,11 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h b/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
+@@ -28,6 +28,6 @@ namespace kernel
+ // The plugin dispatcher (Int4GroupwiseGemmPlugin::enqueue) routes between the two kernels based
+ // on M and N alignment; keep these names referenced on both sides instead of hard-coding.
+-constexpr int32_t kGemmCtaN = 256; // 0039 candidate: gemm_forward_cuda_new requires N % kGemmCtaN == 0
++constexpr int32_t kGemmCtaN = 128; // control dispatcher: gemm_forward_cuda_new requires N % kGemmCtaN == 0
+ constexpr int32_t kGemvMaxM = 6;   // gemv_forward_cuda_new has template instantiations for M=1..6
+ 
+ /*!

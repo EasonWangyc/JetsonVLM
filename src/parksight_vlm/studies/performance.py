@@ -11,10 +11,15 @@ from .model import PerformanceMetrics, PercentileSummary
 
 
 def compute_performance_metrics(records: Sequence[InferenceRecord]) -> PerformanceMetrics:
-    """仅汇总成功执行；失败记录保留在 failure_summary 中。"""
+    """汇总已返回模型输出的记录；质量失败仍保留在 failure_summary 中。"""
     successful_records = [record for record in records if record.succeeded]
+    # JSON 校验失败仍然可能已经完整执行了模型；这些记录应参与运行时性能统计，
+    # 但不参与质量指标。raw_output=None 才表示后端没有返回生成结果。
+    backend_completed_records = [
+        record for record in records if record.raw_output is not None
+    ]
     stage_values: dict[str, list[float]] = {}
-    for record in successful_records:
+    for record in backend_completed_records:
         for stage_name, value in record.stage_timings.to_mapping().items():
             if value is not None:
                 stage_values.setdefault(stage_name, []).append(value)
@@ -23,12 +28,12 @@ def compute_performance_metrics(records: Sequence[InferenceRecord]) -> Performan
         stage_name: _summarize(values) for stage_name, values in stage_values.items()
     }
     cold_start_ms = None
-    if successful_records:
-        cold_start_ms = successful_records[0].stage_timings.end_to_end_ms
+    if backend_completed_records:
+        cold_start_ms = backend_completed_records[0].stage_timings.end_to_end_ms
 
     total_tokens = 0
     total_decode_ms = 0.0
-    for record in successful_records:
+    for record in backend_completed_records:
         if record.output_tokens is None or record.stage_timings.decode_ms is None:
             continue
         total_tokens += record.output_tokens
@@ -37,14 +42,31 @@ def compute_performance_metrics(records: Sequence[InferenceRecord]) -> Performan
     if total_decode_ms > 0:
         tokens_per_second = total_tokens / (total_decode_ms / 1000.0)
 
-    memory_values = _resource_values(successful_records, "peak_memory_mb")
-    power_values = _resource_values(successful_records, "average_power_w")
-    temperature_values = _resource_values(successful_records, "peak_temperature_c")
+    total_output_tokens = 0
+    total_end_to_end_ms = 0.0
+    for record in backend_completed_records:
+        if record.output_tokens is None or record.stage_timings.end_to_end_ms is None:
+            continue
+        total_output_tokens += record.output_tokens
+        total_end_to_end_ms += record.stage_timings.end_to_end_ms
+    aggregate_output_tokens_per_end_to_end_second = None
+    if total_end_to_end_ms > 0:
+        aggregate_output_tokens_per_end_to_end_second = (
+            total_output_tokens / (total_end_to_end_ms / 1000.0)
+        )
+
+    memory_values = _resource_values(backend_completed_records, "peak_memory_mb")
+    power_values = _resource_values(backend_completed_records, "average_power_w")
+    temperature_values = _resource_values(backend_completed_records, "peak_temperature_c")
     return PerformanceMetrics(
         successful_sample_count=len(successful_records),
+        backend_completed_sample_count=len(backend_completed_records),
         cold_start_ms=cold_start_ms,
         stage_latency_ms=stage_latency_ms,
         tokens_per_second=tokens_per_second,
+        aggregate_output_tokens_per_end_to_end_second=(
+            aggregate_output_tokens_per_end_to_end_second
+        ),
         peak_memory_mb=max(memory_values) if memory_values else None,
         average_power_w=sum(power_values) / len(power_values) if power_values else None,
         peak_temperature_c=max(temperature_values) if temperature_values else None,

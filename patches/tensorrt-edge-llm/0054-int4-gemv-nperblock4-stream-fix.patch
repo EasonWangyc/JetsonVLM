@@ -1,0 +1,13 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+@@ -276,7 +276,7 @@ void gemv_forward_cuda_new(half const* in_feats, int8_t const* weights_device,
+     if (use_four_output_groups)
+     {
+         dim3 const four_output_blocks(n / 4 / K_INTERLEAVE);
+-        gemv_kernel<4, 1, BLOCK_SIZE, 128>
+-            <<<four_output_blocks, num_threads>>>(in_feats, kernel, scaling_factors, out_feats, k, n);
++        gemv_kernel<4, 1, BLOCK_SIZE, 128>
++            <<<four_output_blocks, num_threads, 0, stream>>>(in_feats, kernel, scaling_factors, out_feats, k, n);
+         return;
+     }

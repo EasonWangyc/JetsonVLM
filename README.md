@@ -75,24 +75,55 @@ FP16、领域 LoRA、合并模型和 LLM backbone INT4 AWQ 研究。服务器结
 
 ## 最终已核验结果
 
-### Jetson runtime 对比
+本节只汇总性能证据。测试板为 Jetson Orin Nano Super，SM87，15W，batch=1；JetPack
+R36.5、CUDA `12.6.68`、TensorRT `10.3.0.30`、TensorRT Edge-LLM v0.9.1，模型和
+workload identity 与上文固定。Transformers FP16 是跨 runtime 参考；Edge-LLM level 0
+和 level 1 使用相同 INT4 AWQ LLM backbone、`i768/k1024` profile、workspace 1024 MiB、
+KV capacity 1024、CUDA Graph 和插件版本，仅改变 builder optimization level。
 
-结果来自冻结 `ps20_pilot_v1` 测试集，20 个样本、单次重复。`p50` 为端到端时延；
-服务器 GPU 时延不用于推导 Jetson 加速比。
+本轮正式性能证据绑定以下 artifact provenance：level 0 engine SHA-256 为
+`33466f3f1149801bf496737fbe1e69634b8018ece9a0c5bccd8ff83af64afab4`，level 1 candidate
+engine SHA-256 为 `207e109fcca28ac29ae0348d8dd517e61a6291704a8fea08c53644574f28d345`，
+Edge-LLM plugin SHA-256 为 `9437996d36b659092e7d4da244b43da6feb7c69e79a5654a8df53e9f5c2ac7eb`。
 
-| Runtime / 模型 | 后端完成 | 严格 JSON | 风险准确率 | 事件 micro-F1 | 端到端 p50 | 聚合输出速率 |
-|---|---:|---:|---:|---:|---:|---:|
-| Jetson Transformers FP16 | 20/20 | 100% | 35% | 0.341 | 9.38 s | 未报告 |
-| Edge-LLM Base FP16 | 20/20 | 100% | 35% | 0.359 | 50.75 s | 1.48 token/s |
-| Edge-LLM 旧 LoRA FP16 | 20/20 | 100% | 35% | 0.389 | 30.60 s | 1.44 token/s |
-| Edge-LLM 旧通用校准 INT4 | 20/20 | 100% | 35% | 0 | 10.52 s | 7.33 token/s |
-| Edge-LLM 新领域校准 INT4 | 20/20 | 20% | 15% | 0 | 10.68 s | 7.32 token/s |
+### 基线与完整请求性能
 
-旧 INT4 相对 Edge-LLM Base FP16 的端到端延迟约降低至五分之一，engine 体积减少约
-60.5%；但量化后的任务质量仍需单独验收。旧 LoRA 的较低 p50 同时伴随约 41.8% 的
-输出 token 减少，不能直接解释为 runtime 加速。
+| 阶段 | Runtime / 配置 | Prefill | TTFT | Decode / generation | E2E p50 / p90 / p99 |
+|---|---|---:|---:|---:|---:|
+| 基线 | Jetson Transformers FP16 | 486.32 ms | 716.69 ms | 7,897.63 ms/request；9.54 tok/s | 9.569 / 14.439 / 28.155 s |
+| 优化阶段 1 | TensorRT Edge-LLM INT4，level 0 | 531.61 ms | 872.66 ms<sup>1</sup> | 124.02 ms/token；8.06 tok/s | 10.523 / 11.387 / 12.723 s |
+| 优化阶段 2 | TensorRT Edge-LLM INT4，level 1 | 430.97 ms | 702.50 ms<sup>1</sup> | 27.25 ms/token；36.70 tok/s | 2.826 / 2.953 / 3.315 s |
 
+上表是已完成的完整 VLM/HTTP 性能记录：基线为 `1×20` 请求，Edge-LLM 两档为
+`3×20` 请求。不同 runtime 的 decode profile 不是严格 A/B；TTFT 是请求发送到 SSE
+首个非空 `delta.content` 的客户端时间，包含视觉编码、调度、首 token decode、网络和
+流式输出，不能用 prefill 代替。E2E 包含预处理、视觉编码、prefill、decode、HTTP 和
+序列化。
 
+### Edge-LLM 低层严格 A/B
+
+| 阶段 | 构建变量 | Prefill（20 次均值） | Decode Graph（20 次均值） | Decode 吞吐 | 相对 level 0 |
+|---|---|---:|---:|---:|---:|
+| level 0 | `builderOptimizationLevel=0` | 526.8711 ms | 126.6875 ms/token | 7.9 tok/s | — |
+| level 1 | `builderOptimizationLevel=1` | 426.7465 ms | 27.4129 ms/token | 36.5 tok/s | prefill `-19.039%`；decode `4.6215×` |
+| level 1 soak | level 1，CUDA Graph，1000 steps | — | 27.3821 ms/token | 36.5202 tok/s | 运行完成，0 次 runtime failure |
+
+level 0/1 的低层复验固定 `pastKVLen=768`、warm-up=10、每次 20 次、seed=0。level 1
+相对 level 0 的 decode latency 降低 `78.3618%`；1000-step soak 的进程退出码为 0、
+Graph capture 成功，仍记录到独立 metadata loader 的 TensorRT runtime destructor warning。
+以上 low-level 结果用于确认 engine/tactic 差异的稳定性，不把 HTTP round-trip 当作 decode
+latency，也不将 level 1 表述为已替换默认 engine。
+
+原始证据：[阶段报告](reports/jetson-tensorrt-stage1/phase1_summary.md)、
+[level 0/1 低层复验](reports/jetson-tensorrt-revalidation/int4_level0_level1_prefill768_decode20_20260909.json)、
+[decode 重复性](reports/jetson-tensorrt-revalidation/int4_level0_level1_decode20_repeats_20260909.json)、
+[1000-step soak](reports/jetson-tensorrt-revalidation/int4_level1_decode1000_soak_20260909.json)。
+
+## TensorRT 优化文档
+
+近期 TensorRT Edge-LLM 的 builder、CUDA Graph、Nsight、`lm_head`、INT4 GEMV/GEMM
+和 profile 实验集中在 [TensorRT 优化阶段速览](docs/tensorrt-optimization-summary.md)。
+完整命令、候选 patch、provenance 和原始证据边界见 [完整实验记录](docs/tensorrt-optimization.md)。
 
 ## 项目结构
 
@@ -118,6 +149,12 @@ artifacts/           # adapter、ONNX、权重和 engine，本地生成
 reports/             # StudyReport 和运行证据，本地生成
 models/              # 本地模型权重，默认不进入 Git
 ```
+
+工作区约定：`src/`、`scripts/`、`configs/`、`patches/`、`tests/` 和 `docs/` 是可审阅的项目
+实现、实验入口和说明；`models/`、`data/raw/`、`data/processed/`、`artifacts/`、`reports/`
+和两个 `.venv/` 目录是本地输入或生成物，不作为源码层级互相引用。`reports/` 保留实验事实，
+`artifacts/` 保留模型、ONNX、engine 和传输包；清理时先依据配置/报告引用关系，再删除临时包，
+不把可复现实验所需的证据误删为“中间产物”。
 
 核心接口：
 
@@ -194,4 +231,6 @@ $env:PYTHONPATH = "src"
 - [评测口径](docs/evaluation.md)
 - [操作入口](docs/operations.md)
 - [Edge-LLM 部署](docs/edgellm-deployment.md)
+- [TensorRT 优化阶段速览](docs/tensorrt-optimization-summary.md)
+- [TensorRT 优化完整实验记录](docs/tensorrt-optimization.md)
 - [项目记录](docs/personal_record.md)

@@ -1,0 +1,39 @@
+diff --git a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+--- a/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
++++ b/cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp
+@@ -312,4 +312,16 @@
+ inline FMHAKernelList* getFMHAKernels(FMHADataType type, int32_t sm)
+ {
+-    return FMHAKernelLoader::Get().getFMHAKernelList(type, sm);
++    // FMHA cubin lists are immutable after their first load. Keep the list
++    // pointer per host thread so every prefill dispatch does not reacquire the
++    // loader mutex for the same datatype/SM pair.
++    thread_local FMHAKernelLoadHashKey cachedKey{};
++    thread_local FMHAKernelList* cachedList{nullptr};
++    FMHAKernelLoadHashKey const key{type, sm};
++    if (cachedList != nullptr && cachedKey == key)
++    {
++        return cachedList;
++    }
++    cachedList = FMHAKernelLoader::Get().getFMHAKernelList(type, sm);
++    cachedKey = key;
++    return cachedList;
+ }
+@@ -527,5 +536,16 @@ void ContextFMHARunner::dispatchFMHAKernel(FusedMultiheadAttentionParamsV2& params,
+         attentionMaskTypeToInt(mLaunchParams.attention_mask_type), mLaunchParams.use_granular_tiling,
+         attentionInputLayoutToInt(mLaunchParams.attention_input_layout)};
+     FMHAKernelList* fmhaKernelList = getFMHAKernels(trtToFMHADataType(mDataType), mSmVersion);
+-    FMHAKernelFuncInfo kernelInfo = fmhaKernelList->findKernelFunction(hashKey);
++    // The runner is recreated for some plugin invocations, but the selected
++    // flash-attention function is identical for an immutable hash key.
++    thread_local FMHAKernelHashKey cachedKey{};
++    thread_local FMHAKernelFuncInfo cachedKernelInfo{};
++    thread_local bool hasCachedKernelInfo{false};
++    if (!hasCachedKernelInfo || !(cachedKey == hashKey))
++    {
++        cachedKernelInfo = fmhaKernelList->findKernelFunction(hashKey);
++        cachedKey = hashKey;
++        hasCachedKernelInfo = true;
++    }
++    FMHAKernelFuncInfo const& kernelInfo = cachedKernelInfo;
+     check::check(kernelInfo.mSharedMemBytes != 0, "There must be one kernel to implement the MHA");

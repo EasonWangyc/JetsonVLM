@@ -1,0 +1,43 @@
+diff --git a/cpp/sampler/sampling.cu b/cpp/sampler/sampling.cu
+--- a/cpp/sampler/sampling.cu
++++ b/cpp/sampler/sampling.cu
+@@ -20,6 +20,7 @@
+ #include "common/checkMacros.h"
+ #include <cassert>
+ #include <cfloat>
++#include <cstdlib>
+ #include <cstdint>
+ #include <cub/cub.cuh>
+@@ -1016,9 +1017,26 @@
+     // Greedy decode does not need top-K values; a single reduction avoids the
+     // temporary logits write and the second top-K kernel launch.
+     if (topK == 1 && !topKValues.has_value())
+     {
+-        constexpr int32_t GREEDY_BLOCK_SIZE = 256;
+-        greedyTop1Kernel<GREEDY_BLOCK_SIZE><<<batchSize, GREEDY_BLOCK_SIZE, 0, stream>>>(
+-            input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
+-            reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++        // Keep 256 as the default control. A 1024-thread single-block reduction
++        // is exposed for board A/B because the full Qwen vocabulary is 151936
++        // elements per row; the best choice is hardware- and shape-dependent.
++        static int32_t const greedyBlockSize = []() noexcept {
++            char const* value = std::getenv("EDGELLM_GREEDY_ARGMAX_BLOCK_SIZE");
++            return value != nullptr && value[0] == '1' && value[1] == '0' && value[2] == '2' && value[3] == '4'
++                    && value[4] == '\0'
++                ? 1024
++                : 256;
++        }();
++        if (greedyBlockSize == 1024)
++        {
++            greedyTop1Kernel<1024><<<batchSize, 1024, 0, stream>>>(
++                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++        }
++        else
++        {
++            greedyTop1Kernel<256><<<batchSize, 256, 0, stream>>>(
++                input.dataPointer<float>(), topKIndices.dataPointer<int32_t>(), batchSize, vocabSize,
++                reducedVocabMapping != nullptr ? reducedVocabMapping->dataPointer<int32_t>() : nullptr);
++        }
+         return;
+     }

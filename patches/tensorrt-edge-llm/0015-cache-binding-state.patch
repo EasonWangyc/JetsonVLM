@@ -1,0 +1,73 @@
+diff --git a/cpp/runtime/exec/engineExecutor.h b/cpp/runtime/exec/engineExecutor.h
+--- a/cpp/runtime/exec/engineExecutor.h
++++ b/cpp/runtime/exec/engineExecutor.h
+@@ -200,0 +201,7 @@
++    //! Optional host-side cache populated after prepare() binds all I/O tensors.
++    //! It is safe only while callers mutate bindings through prepare().
++    bool mCacheBindingState{false};
++    bool mHasPreparedBindingState{false};
++    size_t mPreparedBindingHash{0};
++    BindingSnapshot mPreparedBindingSnapshot;
++    void refreshPreparedBindingState();
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -93,0 +94,7 @@
++
++    char const* cacheBindingState = std::getenv("EDGELLM_CACHE_BINDING_STATE");
++    mCacheBindingState = cacheBindingState != nullptr && std::string_view{cacheBindingState} == "1";
++    if (mCacheBindingState)
++    {
++        LOG_INFO("host binding-state cache enabled; callers must update I/O through prepare()");
++    }
+@@ -313,1 +313,8 @@
+-    return true;
++    if (mCacheBindingState)
++    {
++        refreshPreparedBindingState();
++    }
++    return true;
+@@ -318,1 +326,1 @@
+-    size_t const hash = computeBindingHash();
++    size_t const hash = mCacheBindingState && mHasPreparedBindingState ? mPreparedBindingHash : computeBindingHash();
+@@ -322,1 +330,3 @@
+-        BindingSnapshot const current = snapshotBindings();
++        BindingSnapshot const current = mCacheBindingState && mHasPreparedBindingState
++            ? mPreparedBindingSnapshot
++            : snapshotBindings();
+@@ -369,2 +377,4 @@
+-    size_t const hash = computeBindingHash();
+-    BindingSnapshot const snap = snapshotBindings();
++    size_t const hash = mCacheBindingState && mHasPreparedBindingState ? mPreparedBindingHash : computeBindingHash();
++    BindingSnapshot const snap = mCacheBindingState && mHasPreparedBindingState
++        ? mPreparedBindingSnapshot
++        : snapshotBindings();
+@@ -483,1 +493,32 @@
++void EngineExecutor::refreshPreparedBindingState()
++{
++    size_t seed = 0;
++    hash_utils::hashCombine(seed, mActiveProfileIndex);
++
++    int32_t const numIO = mEngine->getNbIOTensors();
++    mPreparedBindingSnapshot.bindings.clear();
++    mPreparedBindingSnapshot.bindings.reserve(numIO);
++    for (int32_t i = 0; i < numIO; ++i)
++    {
++        char const* name = mEngine->getIOTensorName(i);
++        auto const addr = reinterpret_cast<uintptr_t>(mContext->getTensorAddress(name));
++        nvinfer1::Dims const shape = mContext->getTensorShape(name);
++
++        hash_utils::hashCombine(seed, addr);
++        hash_utils::hashCombine(seed, shape.nbDims);
++        for (int32_t d = 0; d < shape.nbDims; ++d)
++        {
++            hash_utils::hashCombine(seed, shape.d[d]);
++        }
++        mPreparedBindingSnapshot.bindings.emplace_back(addr, shape);
++    }
++
++    mPreparedBindingHash = seed;
++    mHasPreparedBindingState = true;
++}
++
+ size_t EngineExecutor::computeBindingHash() const

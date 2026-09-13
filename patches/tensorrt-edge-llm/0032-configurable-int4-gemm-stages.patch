@@ -1,0 +1,102 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
+@@ -42,2 +42,3 @@
+ #include <cuda_pipeline_primitives.h>
++#include <cstdlib>
+ #include <mutex>
+@@ -493,4 +494,78 @@
+     }
+ }
+ 
++template <int STAGES>
++void launchGemmForwardCudaNew(half const* in_feats, int8_t const* weights_device, half const* scaling_factors,
++    half* out_feats, int m, int n, int k, cudaStream_t stream) noexcept
++{
++    // The GEMM kernel will load packed int4 weights as fp16 data tensor.
++    half const* kernel = reinterpret_cast<half const*>(weights_device);
++
++    constexpr int G = 128;
++    constexpr int CTA_M = 64;
++    constexpr int CTA_N = kGemmCtaN;
++    constexpr int CTA_K = 64;
++    constexpr int WARP_M = 64;
++    constexpr int WARP_N = 32;
++    constexpr int WARP_K = 64;
++
++    constexpr int NUM_WARPS = (CTA_M / WARP_M) * (CTA_N / WARP_N);
++    constexpr int kSmemByteSize
++        = (CTA_M * (CTA_K + SMEM_PAD_A) + CTA_N * (CTA_K + SMEM_PAD_B) / kInterleave + CTA_N) * STAGES * sizeof(half);
++    static_assert(kSmemByteSize < 99 * 1024, "Shared Memory exceeds device limit.");
++
++    int j_factors1 = n / CTA_N / 1;
++    dim3 num_blocks((m + CTA_M - 1) / CTA_M * j_factors1);
++    dim3 threads_per_block(WARP_SIZE, NUM_WARPS);
++    auto kernel_func = gemm_w4a16_T2<CTA_M, CTA_N, CTA_K, WARP_M, WARP_N, WARP_K, STAGES, G>;
++    // cudaFuncSetAttribute is forbidden during CUDA stream capture; set the attribute
++    // once on first invocation (warmup runs outside capture) so subsequent captured
++    // launches do not invalidate the graph.
++    static std::once_flag sAttrFlag;
++    std::call_once(sAttrFlag,
++        [&]() { cudaFuncSetAttribute(kernel_func, cudaFuncAttributeMaxDynamicSharedMemorySize, kSmemByteSize); });
++    kernel_func<<<num_blocks, threads_per_block, kSmemByteSize, stream>>>(
++        in_feats, kernel, scaling_factors, out_feats, m, n, k);
++}
++
+ void gemm_forward_cuda_new(half const* in_feats, int8_t const* weights_device, half const* scaling_factors,
+     half* out_feats, int m, int n, int k, int group_size, cudaStream_t stream) noexcept
+ {
+-    // The GEMM kernel will load packed int4 weights as fp16 data tensor.
+-    half const* kernel = reinterpret_cast<half const*>(weights_device);
+-
+-    constexpr int G = 128;
+-    constexpr int CTA_M = 64;
+-    constexpr int CTA_N = kGemmCtaN;
+-    constexpr int CTA_K = 64;
+-    constexpr int WARP_M = 64;
+-    constexpr int WARP_N = 32;
+-    constexpr int WARP_K = 64;
+-    constexpr int STAGES = 4;
+-
+-    constexpr int NUM_WARPS = (CTA_M / WARP_M) * (CTA_N / WARP_N);
+-    constexpr int kSmemByteSize
+-        = (CTA_M * (CTA_K + SMEM_PAD_A) + CTA_N * (CTA_K + SMEM_PAD_B) / kInterleave + CTA_N) * STAGES * sizeof(half);
+-    static_assert(kSmemByteSize < 99 * 1024, "Shared Memory exceeds device limit.");
+-
+-    int j_factors1 = n / CTA_N / 1;
+-    dim3 num_blocks((m + CTA_M - 1) / CTA_M * j_factors1);
+-    dim3 threads_per_block(WARP_SIZE, NUM_WARPS);
+-    auto kernel_func = gemm_w4a16_T2<CTA_M, CTA_N, CTA_K, WARP_M, WARP_N, WARP_K, STAGES, G>;
+-    // cudaFuncSetAttribute is forbidden during CUDA stream capture; set the attribute
+-    // once on first invocation (warmup runs outside capture) so subsequent captured
+-    // launches do not invalidate the graph.
+-    static std::once_flag sAttrFlag;
+-    std::call_once(sAttrFlag,
+-        [&]() { cudaFuncSetAttribute(kernel_func, cudaFuncAttributeMaxDynamicSharedMemorySize, kSmemByteSize); });
+-    kernel_func<<<num_blocks, threads_per_block, kSmemByteSize, stream>>>(
+-        in_feats, kernel, scaling_factors, out_feats, m, n, k);
++    // Keep four stages as the control. Two and three stages trade pipeline depth
++    // for shared-memory footprint/occupancy and must be measured on the target GPU.
++    static int32_t const selectedStages = []() noexcept {
++        char const* value = std::getenv("EDGELLM_INT4_GEMM_STAGES");
++        if (value != nullptr && value[0] != '\0' && value[1] == '\0'
++            && (value[0] == '2' || value[0] == '3' || value[0] == '4'))
++        {
++            return static_cast<int32_t>(value[0] - '0');
++        }
++        return 4;
++    }();
++    switch (selectedStages)
++    {
++    case 2:
++        launchGemmForwardCudaNew<2>(in_feats, weights_device, scaling_factors, out_feats, m, n, k, stream);
++        break;
++    case 3:
++        launchGemmForwardCudaNew<3>(in_feats, weights_device, scaling_factors, out_feats, m, n, k, stream);
++        break;
++    case 4:
++    default:
++        launchGemmForwardCudaNew<4>(in_feats, weights_device, scaling_factors, out_feats, m, n, k, stream);
++        break;
++    }
+ }

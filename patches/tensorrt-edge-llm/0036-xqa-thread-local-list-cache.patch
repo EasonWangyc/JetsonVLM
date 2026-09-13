@@ -1,0 +1,21 @@
+diff --git a/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp b/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
+--- a/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
++++ b/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
+@@ -516,5 +516,16 @@
+ inline XQAKernelList* getXQAKernels(
+     XQADataType dataType, XQADataType kvDataType, int32_t sm, bool specDecode, bool pagedKVCache)
+ {
+-    return XQAKernelLoader::Get().getXQAKernelList(dataType, kvDataType, sm, specDecode, pagedKVCache);
++    // The normal decode loop repeatedly asks for the same immutable list. Keep
++    // one per-thread result to avoid taking the loader mutex on every launch.
++    thread_local XQAKernelLoadHashKey cachedKey{};
++    thread_local XQAKernelList* cachedList{nullptr};
++    XQAKernelLoadHashKey const key{dataType, kvDataType, sm, specDecode, pagedKVCache};
++    if (cachedList != nullptr && cachedKey == key)
++    {
++        return cachedList;
++    }
++    cachedList = XQAKernelLoader::Get().getXQAKernelList(dataType, kvDataType, sm, specDecode, pagedKVCache);
++    cachedKey = key;
++    return cachedList;
+ }

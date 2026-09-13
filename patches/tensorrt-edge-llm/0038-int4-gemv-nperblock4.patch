@@ -1,0 +1,33 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+@@ -42,5 +42,7 @@
+ #include "dequantize.cuh"
+ #include <cuda_fp16.h>
++#include <cstdlib>
++#include <cstring>
+ #include <stdexcept>
+ #include <string>
+ 
+@@ -224,7 +225,21 @@ void gemv_forward_cuda_new(half const* in_feats, int8_t const* weights_device,
+     dim3 num_blocks(n / N_PER_BLOCK / K_INTERLEAVE);
+     dim3 num_threads(BLOCK_SIZE);
+ 
+     ELLM_CHECK(group_size == 128,
+         "Unsupported group size " + std::to_string(group_size) + " for gemv kernel; only 128 is supported.");
++    // A single-token decode is output-channel parallel.  The default N_PER_BLOCK=2
++    // launches one block for every 8 output channels; the opt-in 4 path computes
++    // 16 channels per block and therefore halves the block count.  Keep it gated
++    // to M=1 and N divisible by 16 so the existing no-tail indexing remains valid.
++    char const* const requested_n_per_block = std::getenv("EDGELLM_INT4_GEMV_N_PER_BLOCK");
++    bool const use_four_output_groups = m == 1 && n % 16 == 0 && requested_n_per_block != nullptr
++        && std::strcmp(requested_n_per_block, "4") == 0;
++    if (use_four_output_groups)
++    {
++        dim3 const four_output_blocks(n / 4 / K_INTERLEAVE);
++        gemv_kernel<4, 1, BLOCK_SIZE, 128>
++            <<<four_output_blocks, num_threads>>>(in_feats, kernel, scaling_factors, out_feats, k, n);
++        return;
++    }
+     switch (m)
+     {

@@ -1,0 +1,39 @@
+{
+  "schema_version": "parksight_tensorrt_tuning_v1",
+  "experiment_id": "jetson_orin_nano_int4_builder_runtime_v1",
+  "fixed": {
+    "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+    "edge_llm_revision": "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+    "platform": "Jetson Orin Nano 8GB",
+    "power_mode": "15W_MODE_0",
+    "precision": "int4_awq",
+    "max_batch_size": 1,
+    "max_input_len": 768,
+    "max_kv_cache_capacity": 1024
+  },
+  "sweep": {
+    "builder_optimization_levels": [0, 1, 2, 3],
+    "workspace_limits_mib": [1024, 512, 1536],
+    "cuda_graph_modes": ["enabled", "disabled"],
+    "weight_streaming_budgets": ["0%", "25%", "50%", "75%", "100%"],
+    "profile_variants": [
+      {"max_input_len": 512, "max_kv_cache_capacity": 768},
+      {"max_input_len": 768, "max_kv_cache_capacity": 768},
+      {"max_input_len": 768, "max_kv_cache_capacity": 1024}
+    ]
+  },
+  "validation": {
+    "repetitions": 3,
+    "samples_per_repetition": 20,
+    "soak_samples": 100
+  },
+  "acceptance": {
+    "min_repetitions": 3,
+    "min_p50_improvement": 0.1,
+    "min_p90_improvement": 0.05,
+    "max_memory_regression": 0.05,
+    "require_backend_completion": true,
+    "require_json_validity": true,
+    "require_quality_non_regression": true
+  }
+}

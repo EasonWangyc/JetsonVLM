@@ -1,0 +1,23 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h b/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4GroupwiseGemm.h
+@@ -28,6 +28,7 @@ namespace kernel
+ // The plugin dispatcher (Int4GroupwiseGemmPlugin::enqueue) routes between the two kernels based
+ // on M and N alignment; keep these names referenced on both sides instead of hard-coding.
+ constexpr int32_t kGemmCtaN = 128; // gemm_forward_cuda_new requires N % kGemmCtaN == 0
++constexpr int32_t kGemmCtaK = 128; // 0042 candidate: K tile; shared memory remains below 99 KiB
+ constexpr int32_t kGemvMaxM = 6;   // gemv_forward_cuda_new has template instantiations for M=1..6
+ 
+ /*!
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
+@@ -487,7 +487,7 @@ void gemm_forward_cuda_new(half const* in_feats, int8_t const* weights_device,
+     constexpr int G = 128;
+     constexpr int CTA_M = 64;
+     constexpr int CTA_N = kGemmCtaN;
+-    constexpr int CTA_K = 64;
++    constexpr int CTA_K = kGemmCtaK;
+     constexpr int WARP_M = 64;
+     constexpr int WARP_N = 32;
+     constexpr int WARP_K = 64;

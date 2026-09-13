@@ -1,0 +1,189 @@
+diff --git a/cpp/runtime/exec/engineExecutor.h b/cpp/runtime/exec/engineExecutor.h
+--- a/cpp/runtime/exec/engineExecutor.h
++++ b/cpp/runtime/exec/engineExecutor.h
+@@ -46,1 +46,2 @@
+- * wrapper (~300 LOC).
++ * wrapper (~300 LOC). With EDGELLM_PIN_OPTIMIZATION_PROFILES=1, it lazily owns
++ * one execution context per optimization profile to avoid profile switching.
+@@ -167,1 +167,3 @@
+-     * @param registry TensorRegistry describing the binding layout
++     * @param registry TensorRegistry describing the binding layout
++     * @note Profile-pinned contexts are opt-in because the runtime shares one
++     * user-managed context-memory allocation and serializes execution.
+@@ -175,1 +177,1 @@
+-    std::unique_ptr<nvinfer1::IExecutionContext> mContext;
++    nvinfer1::IExecutionContext* mContext{nullptr};
+@@ -184,1 +186,11 @@
+-    };
++    };
++
++    //! Contexts are keyed by their permanently assigned optimization profile.
++    //! They share the user-managed memory supplied by setContextMemory(); callers
++    //! must serialize execution because contexts use one shared scratch buffer.
++    std::unordered_map<int32_t, std::unique_ptr<nvinfer1::IExecutionContext>> mProfileContexts;
++    bool mPinOptimizationProfiles{false};
++    int32_t mActiveProfileIndex{0};
++    nvinfer1::IProfiler* mProfiler{nullptr};
++    void* mContextMemory{nullptr};
++    size_t mContextMemorySize{0};
+@@ -187,1 +199,4 @@
+-    std::unordered_map<size_t, CapturedGraph> mGraphs;
++    std::unordered_map<size_t, CapturedGraph> mGraphs;
++
++    //! Select or lazily create the context assigned to profileIndex.
++    bool selectProfileContext(int32_t profileIndex, cudaStream_t stream);
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -85,5 +85,14 @@
+-    mContext = std::unique_ptr<nvinfer1::IExecutionContext>(
+-        mEngine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED));
+-    ELLM_CHECK(mContext != nullptr, "failed to create execution context");
+-
+-    setNonBlockingAuxStreams(mContext.get(), mEngine.get(), mAuxStreams);
++    auto context = std::unique_ptr<nvinfer1::IExecutionContext>(
++        mEngine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED));
++    ELLM_CHECK(context != nullptr, "failed to create execution context");
++    mContext = context.get();
++    mProfileContexts.emplace(0, std::move(context));
++
++    setNonBlockingAuxStreams(mContext, mEngine.get(), mAuxStreams);
++
++    char const* pinProfiles = std::getenv("EDGELLM_PIN_OPTIMIZATION_PROFILES");
++    mPinOptimizationProfiles = pinProfiles != nullptr && std::string_view{pinProfiles} == "1";
++    if (mPinOptimizationProfiles)
++    {
++        LOG_INFO("optimization profile pinning enabled; contexts are created lazily and execution remains serialized");
++    }
+@@ -102,1 +111,39 @@
+-}
++}
++
++bool EngineExecutor::selectProfileContext(int32_t profileIndex, cudaStream_t stream)
++{
++    if (profileIndex < 0 || profileIndex >= mEngine->getNbOptimizationProfiles())
++    {
++        LOG_ERROR("invalid optimization profile index %d", profileIndex);
++        return false;
++    }
++
++    auto contextIt = mProfileContexts.find(profileIndex);
++    if (contextIt == mProfileContexts.end())
++    {
++        auto context = std::unique_ptr<nvinfer1::IExecutionContext>(
++            mEngine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED));
++        if (context == nullptr)
++        {
++            LOG_ERROR("failed to create execution context for profile %d", profileIndex);
++            return false;
++        }
++        setNonBlockingAuxStreams(context.get(), mEngine.get(), mAuxStreams);
++        if (mContextMemory != nullptr)
++        {
++            context->setDeviceMemoryV2(mContextMemory, mContextMemorySize);
++        }
++        if (mProfiler != nullptr)
++        {
++            context->setProfiler(mProfiler);
++        }
++        bool const profileSwitchTimingEnabled = [] {
++            char const* value = std::getenv("EDGELLM_PROFILE_SWITCH_TIMING");
++            return value != nullptr && std::string_view{value} == "1";
++        }();
++        auto const profileSwitchStart = std::chrono::steady_clock::now();
++        bool const profileSwitchSucceeded = context->setOptimizationProfileAsync(profileIndex, stream);
++        auto const profileSwitchEnd = std::chrono::steady_clock::now();
++        if (profileSwitchTimingEnabled)
++        {
++            double const elapsedMs = std::chrono::duration<double, std::milli>(profileSwitchEnd - profileSwitchStart).count();
++            LOG_INFO("pinned profile initialization call profile=%d elapsed_ms=%.3f success=%s; "
++                     "this is host API-call time, not GPU completion time",
++                profileIndex, elapsedMs, profileSwitchSucceeded ? "true" : "false");
++        }
++        if (!profileSwitchSucceeded)
++        {
++            LOG_ERROR("failed to initialize optimization profile %d", profileIndex);
++            return false;
++        }
++        contextIt = mProfileContexts.emplace(profileIndex, std::move(context)).first;
++        LOG_INFO("created pinned execution context for optimization profile %d", profileIndex);
++    }
++
++    mContext = contextIt->second.get();
++    return true;
++}
+@@ -166,25 +213,37 @@
+-    bool const profileSwitchTimingEnabled = [] {
+-        char const* value = std::getenv("EDGELLM_PROFILE_SWITCH_TIMING");
+-        return value != nullptr && std::string_view{value} == "1";
+-    }();
+-    auto const profileSwitchStart = std::chrono::steady_clock::now();
+-    bool const profileSwitchSucceeded = mContext->setOptimizationProfileAsync(profileIndex, stream);
+-    auto const profileSwitchEnd = std::chrono::steady_clock::now();
+-    if (profileSwitchTimingEnabled)
+-    {
+-        double const elapsedMs = std::chrono::duration<double, std::milli>(profileSwitchEnd - profileSwitchStart).count();
+-        LOG_INFO("profile switch call profile=%d elapsed_ms=%.3f success=%s; "
+-                 "this is host API-call time, not GPU completion time",
+-            profileIndex, elapsedMs, profileSwitchSucceeded ? "true" : "false");
+-    }
+-    if (!profileSwitchSucceeded)
+-    {
+-        LOG_ERROR("failed to set optimization profile %d", profileIndex);
+-        return false;
+-    }
++    if (mPinOptimizationProfiles)
++    {
++        if (!selectProfileContext(profileIndex, stream))
++        {
++            return false;
++        }
++    }
++    else
++    {
++        bool const profileSwitchTimingEnabled = [] {
++            char const* value = std::getenv("EDGELLM_PROFILE_SWITCH_TIMING");
++            return value != nullptr && std::string_view{value} == "1";
++        }();
++        auto const profileSwitchStart = std::chrono::steady_clock::now();
++        bool const profileSwitchSucceeded = mContext->setOptimizationProfileAsync(profileIndex, stream);
++        auto const profileSwitchEnd = std::chrono::steady_clock::now();
++        if (profileSwitchTimingEnabled)
++        {
++            double const elapsedMs = std::chrono::duration<double, std::milli>(profileSwitchEnd - profileSwitchStart).count();
++            LOG_INFO("profile switch call profile=%d elapsed_ms=%.3f success=%s; "
++                     "this is host API-call time, not GPU completion time",
++                profileIndex, elapsedMs, profileSwitchSucceeded ? "true" : "false");
++        }
++        if (!profileSwitchSucceeded)
++        {
++            LOG_ERROR("failed to set optimization profile %d", profileIndex);
++            return false;
++        }
++    }
++    mActiveProfileIndex = profileIndex;
+@@ -172,1 +228,1 @@
+-    if (!mRegistry.bindAll(mContext.get(), map, dims))
++    if (!mRegistry.bindAll(mContext, map, dims))
+@@ -257,1 +313,1 @@
+-    auto result = captureTRTCudaGraph(mContext.get(), stream);
++    auto result = captureTRTCudaGraph(mContext, stream);
+@@ -301,1 +357,7 @@
+-    mContext->setDeviceMemoryV2(sharedMem.rawPointer(), sharedMem.getMemoryCapacity());
++    mContextMemory = sharedMem.rawPointer();
++    mContextMemorySize = sharedMem.getMemoryCapacity();
++    for (auto& entry : mProfileContexts)
++    {
++        entry.second->setDeviceMemoryV2(mContextMemory, mContextMemorySize);
++    }
+@@ -333,1 +395,5 @@
+-    mContext->setProfiler(profiler);
++    mProfiler = profiler;
++    for (auto& entry : mProfileContexts)
++    {
++        entry.second->setProfiler(profiler);
++    }
+@@ -371,1 +437,2 @@
+-    size_t seed = 0;
++    size_t seed = 0;
++    hash_utils::hashCombine(seed, mActiveProfileIndex);

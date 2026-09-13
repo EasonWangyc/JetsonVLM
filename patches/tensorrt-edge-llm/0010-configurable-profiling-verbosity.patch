@@ -1,0 +1,47 @@
+diff --git a/cpp/builder/builderUtils.cpp b/cpp/builder/builderUtils.cpp
+--- a/cpp/builder/builderUtils.cpp
++++ b/cpp/builder/builderUtils.cpp
+@@ -22,5 +22,6 @@
+ #include <NvOnnxParser.h>
+ #include <cstdlib>
+ #include <fstream>
++#include <stdexcept>
+ #include <sstream>
+ #include <string>
+@@ -271,12 +271,36 @@
+     if (char const* value = std::getenv("EDGELLM_BUILDER_OPT_LEVEL"))
+     {
+         auto const level = std::stoi(value);
+         config->setBuilderOptimizationLevel(level);
+         LOG_INFO("TensorRT builder optimization level: %d", level);
+     }
+ 
++    if (char const* value = std::getenv("EDGELLM_PROFILING_VERBOSITY"))
++    {
++        std::string const verbosity{value};
++        nvinfer1::ProfilingVerbosity profilingVerbosity{};
++        if (verbosity == "none")
++        {
++            profilingVerbosity = nvinfer1::ProfilingVerbosity::kNONE;
++        }
++        else if (verbosity == "layer_names_only")
++        {
++            profilingVerbosity = nvinfer1::ProfilingVerbosity::kLAYER_NAMES_ONLY;
++        }
++        else if (verbosity == "detailed")
++        {
++            profilingVerbosity = nvinfer1::ProfilingVerbosity::kDETAILED;
++        }
++        else
++        {
++            throw std::invalid_argument("EDGELLM_PROFILING_VERBOSITY must be none, layer_names_only, or detailed");
++        }
++        config->setProfilingVerbosity(profilingVerbosity);
++        LOG_INFO("TensorRT profiling verbosity: %s", value);
++    }
++
+     if (std::getenv("EDGELLM_ENABLE_WEIGHT_STREAMING") != nullptr)
+     {
+         config->setFlag(nvinfer1::BuilderFlag::kWEIGHT_STREAMING);
+         LOG_INFO("TensorRT weight streaming: enabled");
+     }

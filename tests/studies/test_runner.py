@@ -127,7 +127,12 @@ class StudyRunnerTests(unittest.TestCase):
         self.assertEqual(report.quality_metrics.semantic_issue_counts, {})
         self.assertEqual(report.failure_summary, {"json_parse_error": 1})
         self.assertEqual(report.performance_metrics.successful_sample_count, 1)
+        self.assertEqual(report.performance_metrics.backend_completed_sample_count, 2)
         self.assertEqual(report.performance_metrics.tokens_per_second, 500.0)
+        self.assertAlmostEqual(
+            report.performance_metrics.aggregate_output_tokens_per_end_to_end_second,
+            10.0 / (report.records[0].stage_timings.end_to_end_ms / 1000.0),
+        )
         self.assertEqual(report.performance_metrics.peak_memory_mb, 2048.0)
         self.assertEqual(report.environment_snapshot, {"platform": "unit-test"})
         self.assertEqual(len(report.to_mapping()["records"]), 2)

@@ -1,0 +1,55 @@
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -135,5 +135,26 @@ EngineExecutor::EngineExecutor(std::filesystem::path const& enginePath, TensorRegistry registry)
+     registerOptionalTreeMetadata(binding_names::kTreeParentIds);
+     registerOptionalTreeMetadata(binding_names::kTreeDepths);
+ 
++    mAllEngineIORegistered = true;
++    for (int32_t i = 0; i < mEngine->getNbIOTensors(); ++i)
++    {
++        if (!mRegistry.contains(mEngine->getIOTensorName(i)))
++        {
++            mAllEngineIORegistered = false;
++            break;
++        }
++    }
++    char const* skipFallbackBindingScan = std::getenv("EDGELLM_SKIP_FALLBACK_BINDING_SCAN");
++    mSkipFallbackBindingScan
++        = skipFallbackBindingScan != nullptr && std::string_view{skipFallbackBindingScan} == "1";
++    if (mSkipFallbackBindingScan && mAllEngineIORegistered)
++    {
++        LOG_INFO("fallback binding scan skip enabled; all engine I/O tensors are registry-managed");
++    }
++    else if (mSkipFallbackBindingScan)
++    {
++        LOG_WARNING("fallback binding scan skip requested but engine has unregistered I/O; retaining scan");
++    }
++
+     LOG_INFO("engine loaded successfully (%d I/O tensors)", mEngine->getNbIOTensors());
+ }
+@@ -224,5 +243,14 @@ bool EngineExecutor::prepare(int32_t profileIndex, InferenceDims const& dims, TensorMap const& map, cudaStream_t stream)
+         return false;
+     }
+ 
++    if (mSkipFallbackBindingScan && mAllEngineIORegistered)
++    {
++        if (mCacheBindingState)
++        {
++            refreshPreparedBindingState();
++        }
++        return true;
++    }
++
+     // Bind any TensorMap entries not covered by the registry. We rebind
+     // address+shape on every call (not just when getTensorAddress is null)
+diff --git a/cpp/runtime/exec/engineExecutor.h b/cpp/runtime/exec/engineExecutor.h
+--- a/cpp/runtime/exec/engineExecutor.h
++++ b/cpp/runtime/exec/engineExecutor.h
+@@ -175,4 +175,6 @@ private:
+     std::unique_ptr<nvinfer1::IExecutionContext> mContext;
+     TensorRegistry mRegistry;
++    bool mAllEngineIORegistered{false};
++    bool mSkipFallbackBindingScan{false};
+ 
+     //! A captured CUDA graph together with its binding snapshot for verification.

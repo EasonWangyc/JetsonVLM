@@ -1,0 +1,21 @@
+diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+--- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
++++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoQGemvCuda.cu
+@@ -286,6 +286,18 @@
+     {
+         launch_gemv_for_batch<2, 512>(in_feats, kernel, scaling_factors, out_feats, m, n, k, stream);
+         return;
+     }
++    // Additional warp-aligned candidates for the Orin occupancy/register-pressure
++    // screen. Keep NPerBlock=2 and the 256-thread path as the default control.
++    if (requested_block_size != nullptr && std::strcmp(requested_block_size, "192") == 0)
++    {
++        launch_gemv_for_batch<2, 192>(in_feats, kernel, scaling_factors, out_feats, m, n, k, stream);
++        return;
++    }
++    if (requested_block_size != nullptr && std::strcmp(requested_block_size, "320") == 0)
++    {
++        launch_gemv_for_batch<2, 320>(in_feats, kernel, scaling_factors, out_feats, m, n, k, stream);
++        return;
++    }
+     switch (m)

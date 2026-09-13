@@ -1,0 +1,16 @@
+{
+  "schema_version": "parksight_tensorrt_timing_cache_binding_v1",
+  "device": {
+    "gpu_name": "Jetson Orin Nano",
+    "cuda_version": "12.6",
+    "tensorrt_version": "10.3.0"
+  },
+  "builder_config": {
+    "component": "llm",
+    "max_batch_size": 1,
+    "max_input_len": 768,
+    "max_kv_cache_capacity": 1024,
+    "workspace_limit_mib": 1024,
+    "builder_optimization_level": 2
+  }
+}

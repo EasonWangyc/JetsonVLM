@@ -1,0 +1,36 @@
+diff --git a/cpp/runtime/exec/engineExecutor.cpp b/cpp/runtime/exec/engineExecutor.cpp
+--- a/cpp/runtime/exec/engineExecutor.cpp
++++ b/cpp/runtime/exec/engineExecutor.cpp
+@@ -23,8 +23,9 @@
+ #include "common/logger.h"
+ #include "common/trtUtils.h"
+ #include "runtime/exec/registryBuilder.h"
++#include <chrono>
+ #include <cstdlib>
+ #include <stdexcept>
+ #include <string>
+ #include <string_view>
+ #include <optional>
+@@ -163,7 +163,21 @@ bool EngineExecutor::prepare(int32_t profileIndex, InferenceDims const& dims, TensorMap const& map, cudaStream_t stream)
+         return false;
+     }
+ 
+-    if (!mContext->setOptimizationProfileAsync(profileIndex, stream))
++    bool const profileSwitchTimingEnabled = [] {
++        char const* value = std::getenv("EDGELLM_PROFILE_SWITCH_TIMING");
++        return value != nullptr && std::string_view{value} == "1";
++    }();
++    auto const profileSwitchStart = std::chrono::steady_clock::now();
++    bool const profileSwitchSucceeded = mContext->setOptimizationProfileAsync(profileIndex, stream);
++    auto const profileSwitchEnd = std::chrono::steady_clock::now();
++    if (profileSwitchTimingEnabled)
++    {
++        double const elapsedMs = std::chrono::duration<double, std::milli>(profileSwitchEnd - profileSwitchStart).count();
++        LOG_INFO("profile switch call profile=%d elapsed_ms=%.3f success=%s; "
++                 "this is host API-call time, not GPU completion time",
++            profileIndex, elapsedMs, profileSwitchSucceeded ? "true" : "false");
++    }
++    if (!profileSwitchSucceeded)
+     {
+         LOG_ERROR("failed to set optimization profile %d", profileIndex);
+         return false;

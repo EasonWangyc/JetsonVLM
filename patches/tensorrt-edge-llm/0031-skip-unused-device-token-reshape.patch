@@ -1,0 +1,28 @@
+diff --git a/cpp/runtime/decoding/vanillaDecoder.cpp b/cpp/runtime/decoding/vanillaDecoder.cpp
+--- a/cpp/runtime/decoding/vanillaDecoder.cpp
++++ b/cpp/runtime/decoding/vanillaDecoder.cpp
+@@ -69,8 +69,7 @@
+ 
+     int32_t const activeBatchSize = context.activeBatchSize;
+-    check::check(mRuntime.preprocess.idsInput.reshape({activeBatchSize, 1}), "Tensor reshape failed");
+     bool const useDirectDeviceTokenEmbedding = directDeviceTokenEmbeddingEnabled()
+         && context.layerDebugger == nullptr && !mRuntime.preprocess.gemma4Ple;
+     if (useDirectDeviceTokenEmbedding)
+@@ -78,6 +77,10 @@
+         auto const samplingShape = mRuntime.sampling.indices.getShape();
+         check::check(samplingShape.getNumDims() == 2 && samplingShape[0] == activeBatchSize && samplingShape[1] == 1,
+             "Sampling indices shape mismatch for direct device token embedding");
+     }
+     else if (context.layerDebugger != nullptr)
+     {
++        check::check(mRuntime.preprocess.idsInput.reshape({activeBatchSize, 1}), "Tensor reshape failed");
+         check::check(mRuntime.sampling.hostPackedTokenIds.reshape({activeBatchSize}), "Tensor reshape failed");
+         int32_t* hostPackedTokenIdsData = mRuntime.sampling.hostPackedTokenIds.dataPointer<int32_t>();
+@@ -94,6 +97,7 @@
+     }
+     else
+     {
++        check::check(mRuntime.preprocess.idsInput.reshape({activeBatchSize, 1}), "Tensor reshape failed");
+         CUDA_CHECK(cudaMemcpyAsync(mRuntime.preprocess.idsInput.rawPointer(), mRuntime.sampling.indices.rawPointer(),
+             activeBatchSize * sizeof(int32_t), cudaMemcpyDeviceToDevice, context.stream));
+     }

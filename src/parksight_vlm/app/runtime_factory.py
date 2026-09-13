@@ -74,7 +74,13 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
     if config.backend == "tensorrt_edge_llm_http":
         _require_allowed_options(
             config.options,
-            {"base_url", "model_name", "timeout_seconds"},
+            {
+                "base_url",
+                "model_name",
+                "timeout_seconds",
+                "stream_responses",
+                "reuse_http_connection",
+            },
             "tensorrt_edge_llm_http",
         )
         timeout_seconds = config.options.get("timeout_seconds", 120.0)
@@ -82,10 +88,20 @@ def build_runtime(config: RuntimeConfig, *, data_root: Path) -> RiskRuntime:
             timeout_seconds, (int, float)
         ):
             raise AppConfigError("runtime.options.timeout_seconds must be numeric")
+        stream_responses = config.options.get("stream_responses", True)
+        if not isinstance(stream_responses, bool):
+            raise AppConfigError("runtime.options.stream_responses must be a boolean")
+        reuse_http_connection = config.options.get("reuse_http_connection", False)
+        if not isinstance(reuse_http_connection, bool):
+            raise AppConfigError(
+                "runtime.options.reuse_http_connection must be a boolean"
+            )
         backend = EdgeLlmHttpBackend(
             base_url=_option_text(config.options, "base_url", "http://127.0.0.1:8000"),
             model_name=_option_text(config.options, "model_name", "local"),
             timeout_seconds=float(timeout_seconds),
+            stream_responses=stream_responses,
+            reuse_http_connection=reuse_http_connection,
         )
         return EdgeLlmRuntime(
             data_root=data_root,

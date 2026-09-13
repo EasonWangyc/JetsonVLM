@@ -277,7 +277,8 @@ ParkingCase -> RiskRuntime -> InferenceRecord -> StudyReport
 `event_micro_f1`（事件 micro-F1，六类事件累计 TP/FP/FN）/ `unsafe_advice_rate`（不安全建议率）/
 `event_errors`（逐事件 FP/FN）。
 
-性能指标：`cold_start_ms`（冷启动 = 第一条成功记录端到端）/ `stage_latency_ms`（每阶段 p50/p90/p99）/
+性能指标：`cold_start_ms`（仅在单独 warm-up 证据存在时记录服务 ready 后首个请求）/
+`stage_latency_ms`（每阶段 p50/p90/p99）/
 `tokens_per_second` / `peak_memory_mb` / `average_power_w` / `peak_temperature_c`。
 
 #### 评测标准

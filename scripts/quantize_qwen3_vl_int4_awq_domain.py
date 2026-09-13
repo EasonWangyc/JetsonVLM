@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import subprocess
 import sys
@@ -69,6 +70,11 @@ def main() -> int:
         default=1,
         help="limit calibration logits to reduce temporary GPU memory",
     )
+    parser.add_argument(
+        "--lm-head-quantization",
+        choices=("int4_awq",),
+        help="optional independent LM-head quantization candidate; default keeps FP16",
+    )
     args = parser.parse_args()
 
     edge_llm_root = args.edge_llm_root.resolve()
@@ -96,6 +102,10 @@ def main() -> int:
     sys.path.insert(0, str(edge_llm_root))
     from tensorrt_edgellm.quantization import quantize as quantize_module
     from tensorrt_edgellm.quantization.quantize import quantize_and_export
+    _validate_quantize_export_interface(
+        quantize_and_export,
+        requested_lm_head_quantization=args.lm_head_quantization,
+    )
 
     original_loader = quantize_module._text_calib_dataloader
 
@@ -139,22 +149,26 @@ def main() -> int:
 
     domain_text_dataset.calib_name = dataset_path.stem  # type: ignore[attr-defined]
     output_dir = args.output_dir.resolve()
-    quantize_and_export(
-        model_dir=str(args.model_dir.resolve()),
-        output_dir=str(output_dir),
-        quantization="int4_awq",
-        dtype="fp16",
-        device="cuda",
+    quantization_kwargs = _quantization_kwargs(
+        model_dir=args.model_dir.resolve(),
+        output_dir=output_dir,
         text_dataset=domain_text_dataset,
         num_samples=args.num_samples,
+        lm_head_quantization=args.lm_head_quantization,
     )
+    quantize_and_export(**quantization_kwargs)
 
     provenance = {
         "status": "succeeded",
         "quantization": "int4_awq",
-        "scope": "llm_backbone",
+        "scope": (
+            "llm_backbone_plus_lm_head"
+            if args.lm_head_quantization is not None
+            else "llm_backbone"
+        ),
         "visual_precision": "fp16",
-        "lm_head_precision": "fp16",
+        "lm_head_precision": args.lm_head_quantization or "fp16",
+        "lm_head_quantization": args.lm_head_quantization,
         "kv_cache_quantization": None,
         "model_dir": str(args.model_dir.resolve()),
         "calibration_dataset": str(dataset_path),
@@ -172,6 +186,54 @@ def main() -> int:
     )
     print(json.dumps(provenance, ensure_ascii=False, indent=2))
     return 0
+
+
+def _quantization_kwargs(
+    *,
+    model_dir: Path,
+    output_dir: Path,
+    text_dataset: Any,
+    num_samples: int,
+    lm_head_quantization: str | None,
+) -> dict[str, Any]:
+    """Build exporter kwargs while keeping the formal default unchanged."""
+    kwargs: dict[str, Any] = {
+        "model_dir": str(model_dir),
+        "output_dir": str(output_dir),
+        "quantization": "int4_awq",
+        "dtype": "fp16",
+        "device": "cuda",
+        "text_dataset": text_dataset,
+        "num_samples": num_samples,
+    }
+    if lm_head_quantization is not None:
+        kwargs["lm_head_quantization"] = lm_head_quantization
+    return kwargs
+
+
+def _validate_quantize_export_interface(
+    quantize_and_export: Any,
+    *,
+    requested_lm_head_quantization: str | None,
+) -> None:
+    """Fail early when the pinned Edge-LLM exporter lacks a requested knob."""
+    if requested_lm_head_quantization is None:
+        return
+    try:
+        parameters = inspect.signature(quantize_and_export).parameters
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(
+            "cannot inspect Edge-LLM quantize_and_export signature for the LM-head candidate"
+        ) from error
+    accepts_keyword = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if "lm_head_quantization" not in parameters and not accepts_keyword:
+        raise RuntimeError(
+            "the pinned Edge-LLM quantize_and_export does not support "
+            "lm_head_quantization; aborting before calibration"
+        )
 
 
 if __name__ == "__main__":

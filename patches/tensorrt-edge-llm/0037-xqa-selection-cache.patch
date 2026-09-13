@@ -1,0 +1,66 @@
+diff --git a/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp b/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
+--- a/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
++++ b/cpp/kernels/decodeAttentionKernels/decoderXQARunner.cpp
+@@ -116,6 +116,20 @@ struct XQAKernelRuntimeHasher
+     }
+ };
+ 
++struct XQAKernelSelectionCacheKey
++{
++    XQAKernelRuntimeHashKey runtimeKey;
++    int32_t sm{0};
++    bool specDecode{false};
++    bool pagedKVCache{false};
++
++    bool operator==(XQAKernelSelectionCacheKey const& other) const noexcept
++    {
++        return runtimeKey == other.runtimeKey && sm == other.sm && specDecode == other.specDecode
++            && pagedKVCache == other.pagedKVCache;
++    }
++};
++
+ struct XQAKernelFuncInfo
+ {
+     uint32_t mSharedMemBytes{0};
+@@ -580,7 +599,19 @@ void DecoderXQARunner::dispatchXQAKernel(XQALaunchParams& params, cudaStream_t const& stream)
+     auto hashKey = getRuntimeHashKeyFromXQAParams(params);
+     XQAKernelList* xqaKernelList = getXQAKernels(
+         trtToXqaDataType(mDataType), trtToXqaDataType(mKVDataType), mSmVersion, useSpecDecode, usePagedKV);
+-    XQAKernelFuncInfo kernelInfo = xqaKernelList->findKernelFunction(hashKey);
++    // The normal decode loop keeps an immutable runtime key. Cache the selected
++    // function locally so map lookup and variant ranking do not repeat per step.
++    thread_local XQAKernelSelectionCacheKey cachedKey{};
++    thread_local XQAKernelFuncInfo cachedKernelInfo{};
++    thread_local bool hasCachedKernelInfo{false};
++    XQAKernelSelectionCacheKey const selectionKey{hashKey, mSmVersion, useSpecDecode, usePagedKV};
++    if (!hasCachedKernelInfo || !(cachedKey == selectionKey))
++    {
++        cachedKernelInfo = xqaKernelList->findKernelFunction(hashKey);
++        cachedKey = selectionKey;
++        hasCachedKernelInfo = true;
++    }
++    XQAKernelFuncInfo const& kernelInfo = cachedKernelInfo;
+     check::check(kernelInfo.mSharedMemBytes != 0, "No available kernel available for the GQA");
+ 
+     KernelKVCacheArg kernelKVCacheArg = makeKernelKVCacheArg(params.kvCache, usePagedKV);
+@@ -626,7 +658,19 @@ void DecoderXQARunner::dispatchSpecDecodeXQAKernel(XQALaunchParams& params, cudaStream_t const& stream)
+     auto hashKey = getRuntimeHashKeyFromXQAParamsSpecDecode(params);
+     XQAKernelList* xqaKernelList = getXQAKernels(
+         trtToXqaDataType(mDataType), trtToXqaDataType(mKVDataType), mSmVersion, useSpecDecode, usePagedKV);
+-    XQAKernelFuncInfo kernelInfo = xqaKernelList->findKernelFunction(hashKey);
++    // Keep the speculative-decode path on the same cache discipline. The
++    // specDecode/pagedKV bits prevent cross-path reuse of a cached function.
++    thread_local XQAKernelSelectionCacheKey cachedKey{};
++    thread_local XQAKernelFuncInfo cachedKernelInfo{};
++    thread_local bool hasCachedKernelInfo{false};
++    XQAKernelSelectionCacheKey const selectionKey{hashKey, mSmVersion, useSpecDecode, usePagedKV};
++    if (!hasCachedKernelInfo || !(cachedKey == selectionKey))
++    {
++        cachedKernelInfo = xqaKernelList->findKernelFunction(hashKey);
++        cachedKey = selectionKey;
++        hasCachedKernelInfo = true;
++    }
++    XQAKernelFuncInfo const& kernelInfo = cachedKernelInfo;
+     check::check(kernelInfo.mSharedMemBytes != 0, "No available kernel available for the Spec-DecodeGQA");
+ 
+     KernelKVCacheArg kernelKVCacheArg = makeKernelKVCacheArg(params.kvCache, usePagedKV);

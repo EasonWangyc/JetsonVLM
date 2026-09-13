@@ -1,0 +1,81 @@
+{
+  "schema_version": "parksight_tensorrt_runtime_tuning_v1",
+  "experiment_id": "jetson_orin_nano_int4_runtime_host_v1",
+  "fixed": {
+    "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+    "edge_llm_revision": "7f061f21f0a581ba234a1e233c9315b89d8e47d6",
+    "platform": "Jetson Orin Nano 8GB",
+    "power_mode": "15W_MODE_0",
+    "precision": "int4_awq",
+    "max_batch_size": 1,
+    "max_input_len": 768,
+    "max_kv_cache_capacity": 1024,
+    "cuda_graph_mode": "enabled"
+  },
+  "variants": [
+    {
+      "variant_id": "control",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "pin_profiles",
+      "pin_optimization_profiles": true,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "binding_state_cache",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": true,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "registered_binding_cache",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": true,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "skip_redundant_profile_switch",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": true,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "skip_fallback_binding_scan",
+      "pin_optimization_profiles": false,
+      "cache_binding_state": false,
+      "cache_registered_bindings": false,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": true
+    },
+    {
+      "variant_id": "pinned_plus_binding_caches",
+      "pin_optimization_profiles": true,
+      "cache_binding_state": true,
+      "cache_registered_bindings": true,
+      "skip_redundant_profile_switch": false,
+      "skip_fallback_binding_scan": false
+    },
+    {
+      "variant_id": "all_host_fast_path",
+      "pin_optimization_profiles": true,
+      "cache_binding_state": true,
+      "cache_registered_bindings": true,
+      "skip_redundant_profile_switch": true,
+      "skip_fallback_binding_scan": true
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+diff --git a/cpp/runtime/exec/tensorRegistry.h b/cpp/runtime/exec/tensorRegistry.h
+--- a/cpp/runtime/exec/tensorRegistry.h
++++ b/cpp/runtime/exec/tensorRegistry.h
+@@ -24,0 +25,1 @@
++#include <unordered_set>
+@@ -141,0 +143,1 @@
++    mutable std::unordered_set<std::string_view> mExpandedNameIndex; //!< O(1) lookup into mExpandedSpecs names
+diff --git a/cpp/runtime/exec/tensorRegistry.cpp b/cpp/runtime/exec/tensorRegistry.cpp
+--- a/cpp/runtime/exec/tensorRegistry.cpp
++++ b/cpp/runtime/exec/tensorRegistry.cpp
+@@ -67,0 +68,1 @@
++        mExpandedNameIndex.clear();
+@@ -73,0 +75,5 @@
++        mExpandedNameIndex.reserve(mExpandedSpecs.size());
++        for (auto const& spec : mExpandedSpecs)
++        {
++            mExpandedNameIndex.emplace(spec.name);
++        }
+@@ -112,8 +118,1 @@
+-    for (auto const& spec : allExpandedSpecs())
+-    {
+-        if (spec.name == name)
+-        {
+-            return true;
+-        }
+-    }
+-    return false;
++    (void) allExpandedSpecs();
++    return mExpandedNameIndex.find(name) != mExpandedNameIndex.end();

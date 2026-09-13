@@ -51,12 +51,20 @@ Jetson Transformers FP16 如果无法加载、发生 OOM 或依赖不兼容，�
 
 ## 性能指标
 
-- 只对成功记录聚合时延和资源值；失败继续保留在 `failure_summary` 和原始记录中。
+- 质量指标只对成功解析的记录计算；性能指标对已返回 `raw_output` 的后端完成记录计算，
+  因为 JSON 解析失败不应抹掉已经发生的推理耗时。未返回模型输出的记录不进入性能分位数。
 - 每个实际采集到的阶段分别计算 p50、p90、p99。
 - 首个成功执行的端到端时延记为 cold start。
-- tokens/s 只在 runtime 同时报告 output tokens 与 decode latency 时计算。
+- `tokens_per_second` 只在 runtime 同时报告 output tokens 与 decode latency 时计算，表示
+  decode-only tokens/s；`aggregate_output_tokens_per_end_to_end_second` 使用全部后端完成记录
+ 计算，表示端到端链路的聚合输出速率，不能替代 decode-only tokens/s。
 - 峰值内存和峰值温度取最大值，平均功耗对已采集记录取算术平均。
 - 未被 runtime 实际测量的指标保持 `null`，不使用估算值补齐。
+- Transformers profile 可记录 `vision_encode_ms`、`prefill_ms`、`decode_ms` 和
+  `time_to_first_token_ms`；Edge-LLM HTTP adapter 默认请求流式响应，并从首个非空
+  `delta.content` 到达时记录客户端观测 TTFT，同时记录请求构造时间和
+  `http_round_trip_ms`。将 `runtime.options.stream_responses` 设为 `false` 可保留非流式
+  兼容路径；非流式响应只有在服务端显式返回时才记录 TTFT，不能从完整 HTTP RTT 推算。
 
 ## 失败类别
 

@@ -1,0 +1,38 @@
+diff --git a/cpp/runtime/decoding/vanillaDecoder.cpp b/cpp/runtime/decoding/vanillaDecoder.cpp
+--- a/cpp/runtime/decoding/vanillaDecoder.cpp
++++ b/cpp/runtime/decoding/vanillaDecoder.cpp
+@@ -59,15 +59,23 @@
+     int32_t const activeBatchSize = context.activeBatchSize;
+-    check::check(mRuntime.sampling.hostPackedTokenIds.reshape({activeBatchSize}), "Tensor reshape failed");
+-    int32_t* hostPackedTokenIdsData = mRuntime.sampling.hostPackedTokenIds.dataPointer<int32_t>();
+-
+-    for (int32_t i = 0; i < activeBatchSize; ++i)
+-    {
+-        hostPackedTokenIdsData[i] = context.tokenIds[i].back();
+-    }
+-
+     check::check(mRuntime.preprocess.idsInput.reshape({activeBatchSize, 1}), "Tensor reshape failed");
+-    CUDA_CHECK(
+-        cudaMemcpyAsync(mRuntime.preprocess.idsInput.rawPointer(), mRuntime.sampling.hostPackedTokenIds.rawPointer(),
+-            activeBatchSize * sizeof(int32_t), cudaMemcpyHostToDevice, context.stream));
++    if (context.layerDebugger != nullptr || activeBatchSize != 1)
++    {
++        check::check(mRuntime.sampling.hostPackedTokenIds.reshape({activeBatchSize}), "Tensor reshape failed");
++        int32_t* hostPackedTokenIdsData = mRuntime.sampling.hostPackedTokenIds.dataPointer<int32_t>();
++
++        for (int32_t i = 0; i < activeBatchSize; ++i)
++        {
++            hostPackedTokenIdsData[i] = context.tokenIds[i].back();
++        }
++
++        CUDA_CHECK(
++            cudaMemcpyAsync(mRuntime.preprocess.idsInput.rawPointer(), mRuntime.sampling.hostPackedTokenIds.rawPointer(),
++                activeBatchSize * sizeof(int32_t), cudaMemcpyHostToDevice, context.stream));
++    }
++    else
++    {
++        CUDA_CHECK(cudaMemcpyAsync(mRuntime.preprocess.idsInput.rawPointer(), mRuntime.sampling.indices.rawPointer(),
++            activeBatchSize * sizeof(int32_t), cudaMemcpyDeviceToDevice, context.stream));
++    }
+ 
+     check::check(

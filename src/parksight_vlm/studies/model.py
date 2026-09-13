@@ -129,9 +129,11 @@ class QualityMetrics:
 @dataclass(frozen=True, slots=True)
 class PerformanceMetrics:
     successful_sample_count: int
+    backend_completed_sample_count: int
     cold_start_ms: float | None
     stage_latency_ms: Mapping[str, PercentileSummary]
     tokens_per_second: float | None
+    aggregate_output_tokens_per_end_to_end_second: float | None
     peak_memory_mb: float | None
     average_power_w: float | None
     peak_temperature_c: float | None
@@ -139,11 +141,15 @@ class PerformanceMetrics:
     def to_mapping(self) -> dict[str, Any]:
         return {
             "successful_sample_count": self.successful_sample_count,
+            "backend_completed_sample_count": self.backend_completed_sample_count,
             "cold_start_ms": self.cold_start_ms,
             "stage_latency_ms": {
                 stage: summary.to_mapping() for stage, summary in self.stage_latency_ms.items()
             },
             "tokens_per_second": self.tokens_per_second,
+            "aggregate_output_tokens_per_end_to_end_second": (
+                self.aggregate_output_tokens_per_end_to_end_second
+            ),
             "peak_memory_mb": self.peak_memory_mb,
             "average_power_w": self.average_power_w,
             "peak_temperature_c": self.peak_temperature_c,

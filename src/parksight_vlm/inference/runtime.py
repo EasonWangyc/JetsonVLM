@@ -84,6 +84,8 @@ class StageTimings:
     model_generate_ms: float | None = None
     prefill_ms: float | None = None
     decode_ms: float | None = None
+    http_round_trip_ms: float | None = None
+    backend_end_to_end_ms: float | None = None
     end_to_end_ms: float | None = None
     time_to_first_token_ms: float | None = None
 
@@ -99,6 +101,8 @@ class StageTimings:
             "model_generate_ms": self.model_generate_ms,
             "prefill_ms": self.prefill_ms,
             "decode_ms": self.decode_ms,
+            "http_round_trip_ms": self.http_round_trip_ms,
+            "backend_end_to_end_ms": self.backend_end_to_end_ms,
             "end_to_end_ms": self.end_to_end_ms,
             "time_to_first_token_ms": self.time_to_first_token_ms,
         }
