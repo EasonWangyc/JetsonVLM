@@ -1,6 +1,0 @@
-diff --git a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
---- a/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
-+++ b/cpp/kernels/int4GroupwiseGemmKernels/int4WoqGemmCuda.cu
-@@ -494,1 +494,1 @@
--    constexpr int STAGES = 4;
-+    constexpr int STAGES = 2;
