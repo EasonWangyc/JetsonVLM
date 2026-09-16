@@ -88,17 +88,35 @@ Edge-LLM plugin SHA-256 为 `9437996d36b659092e7d4da244b43da6feb7c69e79a5654a8df
 
 ### 基线与完整请求性能
 
-| 阶段 | Runtime / 配置 | Prefill | TTFT | Decode / generation | E2E p50 / p90 / p99 |
-|---|---|---:|---:|---:|---:|
-| 基线 | Jetson Transformers FP16 | 486.32 ms | 716.69 ms | 7,897.63 ms/request；9.54 tok/s | 9.569 / 14.439 / 28.155 s |
-| 优化阶段 1 | TensorRT Edge-LLM INT4，level 0 | 531.61 ms | 872.66 ms<sup>1</sup> | 124.02 ms/token；8.06 tok/s | 10.523 / 11.387 / 12.723 s |
-| 优化阶段 2 | TensorRT Edge-LLM INT4，level 1 | 430.97 ms | 702.50 ms<sup>1</sup> | 27.25 ms/token；36.70 tok/s | 2.826 / 2.953 / 3.315 s |
+| 阶段 | Runtime / 配置 | Prefill | Prefill 吞吐 | TTFT | Decode latency | Decode-only 吞吐 | E2E p50 / p90 / p99 | E2E aggregate 吞吐 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 基线 | Jetson Transformers FP16 | 486.32 ms | 未采集 | 716.69 ms | 7,897.63 ms/request | 9.54 tok/s | 9.569 / 14.439 / 28.155 s | 7.35 tok/s |
+| 优化阶段 1 | TensorRT Edge-LLM INT4，level 0 | 531.61 ms | 1,442.78 tok/s | 872.66 ms<sup>1</sup> | 124.02 ms/token | 8.06 tok/s | 10.523 / 11.387 / 12.723 s | 7.32 tok/s |
+| 优化阶段 2 | TensorRT Edge-LLM INT4，level 1 | 430.97 ms | 1,779.70 tok/s | 702.50 ms<sup>1</sup> | 27.25 ms/token | 36.70 tok/s | 2.826 / 2.953 / 3.315 s | 27.27 tok/s |
 
 上表是已完成的完整 VLM/HTTP 性能记录：基线为 `1×20` 请求，Edge-LLM 两档为
 `3×20` 请求。不同 runtime 的 decode profile 不是严格 A/B；TTFT 是请求发送到 SSE
 首个非空 `delta.content` 的客户端时间，包含视觉编码、调度、首 token decode、网络和
 流式输出，不能用 prefill 代替。E2E 包含预处理、视觉编码、prefill、decode、HTTP 和
-序列化。
+序列化。`Decode-only 吞吐` 来自模型生成阶段；`E2E aggregate 吞吐` 是完整请求的
+总输出 token 数除以 E2E wall-clock，不能用前者替代后者。基线的 prefill 吞吐未在原始
+Transformers profile 中采集，因此保留为“未采集”。
+
+### 板端内存与资源占用
+
+Jetson Orin Nano 使用统一内存架构，没有独立的离散显存。下表同时保留运行时 profile
+的峰值内存和 `tegrastats` 的系统 RAM/SWAP 峰值；二者采样器、时间范围和统计对象不同，
+不能当作同一份进程显存账本。level 0/1 的峰值统一内存来自真实 VLM profile 三次平均，
+并且是严格可比的 builder level A/B。
+
+| 阶段 | Runtime profile 峰值内存 | `tegrastats` RAM used 峰值 | `tegrastats` SWAP used 峰值 | 说明 |
+|---|---:|---:|---:|---|
+| 基线 | 4,168.8 MB | 6,231 MB | 1,059 MB | Transformers `peak_memory_mb`；未采集 native unified-memory 字段 |
+| 优化阶段 1 / level 0 | 4,030.4 MB | 4,904 MB | 1,083 MB | Edge-LLM native profile，三次平均；INT4、`i768/k1024` |
+| 优化阶段 2 / level 1 | 4,040.1 MB | 4,905 MB | 1,085 MB | 相对 level 0 峰值统一内存 `+9.66 MB`、`+0.24%` |
+
+内存结论只在同一采样口径内比较：level 1 相对 level 0 没有明显内存恶化，且本轮
+没有 OOM；不同 runtime 的 `Runtime profile 峰值内存` 不直接作为显存节省结论。
 
 ### Edge-LLM 低层严格 A/B
 

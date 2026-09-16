@@ -19,3 +19,6 @@ models/
 # Jetson and profiler outputs
 tegrastats*.log
 nsys-rep/
+
+# TensorRT-LLM patch cache (generated, not tracked)
+patches/

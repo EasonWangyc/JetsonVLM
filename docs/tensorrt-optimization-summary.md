@@ -100,7 +100,7 @@ level 1 non-Graph decode trace 的 GPU kernel 时间分布为：
 ## 当前技术边界
 
 - 当前路径使用 Edge-LLM 已有的 INT4 W4A16、attention/FMHA plugin、TensorRT tactic 选择和 CUDA Graph。
-- 当前项目增加的是构建配置、provenance、benchmark、Nsight 汇总和隔离候选 patch；没有将自研
+- 当前项目增加的是构建配置、provenance、benchma rk、Nsight 汇总和隔离候选 patch；没有将自研
   CUDA kernel 或新 TensorRT plugin 宣称为正式生产路径。
 - 投机采样、NVFP4、FP8、paged KV cache 和 FP16 weight streaming 尚未形成本轮可比较的性能结果。
 - builder level `2/3` 在板端构建阶段因约 622 MB CUDA allocation 失败，尚未生成可比较 engine；
